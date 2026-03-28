@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { MessageSquare, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { useMockChat } from "@/hooks/use-mock-chat";
+import { sendCoachMessage } from "@/lib/api";
+import type { ChatMessage } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
 
 const SUGGESTIONS = [
@@ -13,7 +14,6 @@ const SUGGESTIONS = [
   "Give me a 3-point action plan",
 ];
 
-// Render time references like "minute 12" or "12:00–18:00" as styled spans
 function renderWithTimeLinks(text: string) {
   return text.replace(
     /(\b(?:minutes?\s+\d+(?:–\d+)?|\d{1,2}:\d{2}(?:\s*–\s*\d{1,2}:\d{2})?))/g,
@@ -21,11 +21,41 @@ function renderWithTimeLinks(text: string) {
   );
 }
 
-export function TeachingCoachChat() {
-  const { messages, isStreaming, sendMessage } = useMockChat();
+interface Props {
+  sessionId?: string;
+}
+
+export function TeachingCoachChat({ sessionId }: Props) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const hasMessages = messages.length > 0;
+
+  const sendMessage = useCallback(async (text: string) => {
+    const userMsg: ChatMessage = { role: "user", content: text };
+    const newMessages = [...messages, userMsg];
+    setMessages([...newMessages, { role: "assistant", content: "" }]);
+    setIsStreaming(true);
+
+    try {
+      if (!sessionId) throw new Error("No session");
+
+      const response = await sendCoachMessage(sessionId, newMessages);
+      setMessages([...newMessages, { role: "assistant", content: response }]);
+    } catch {
+      // Fallback: show a helpful error message
+      setMessages([
+        ...newMessages,
+        {
+          role: "assistant",
+          content: "I couldn't connect to the AI coach right now. Make sure the backend is running and your `ANTHROPIC_API_KEY` is set in the `.env` file.",
+        },
+      ]);
+    } finally {
+      setIsStreaming(false);
+    }
+  }, [messages, sessionId]);
 
   const handleSend = () => {
     const trimmed = input.trim();
@@ -34,7 +64,6 @@ export function TeachingCoachChat() {
     sendMessage(trimmed);
   };
 
-  // Auto-scroll on new content
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -45,7 +74,6 @@ export function TeachingCoachChat() {
     <div className="space-y-4">
       <Separator className="bg-border" />
 
-      {/* Header */}
       <div className="flex items-center gap-2">
         <MessageSquare className="h-5 w-5 text-primary" />
         <div>
@@ -56,7 +84,6 @@ export function TeachingCoachChat() {
         </div>
       </div>
 
-      {/* Suggestion chips */}
       {!hasMessages && (
         <div className="flex flex-wrap gap-2">
           {SUGGESTIONS.map((s) => (
@@ -71,7 +98,6 @@ export function TeachingCoachChat() {
         </div>
       )}
 
-      {/* Chat area */}
       <div
         ref={scrollRef}
         className="rounded-lg border border-border bg-background/50 overflow-y-auto scroll-smooth"
@@ -126,7 +152,6 @@ export function TeachingCoachChat() {
         )}
       </div>
 
-      {/* Input bar */}
       <div className="flex gap-2">
         <Input
           value={input}
