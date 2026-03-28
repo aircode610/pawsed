@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { Play, Eye, Moon, CircleDot, ArrowLeft, ArrowRight, AlertCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -44,20 +44,46 @@ function eventLabel(type: string): string {
   return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 const TimelinePage = () => {
   const { id } = useParams();
   const { data: session, isLoading, isUsingMock } = useSessionData(id);
   const [currentTime, setCurrentTime] = useState(0);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoError, setVideoError] = useState(false);
   const { duration, analytics, events, engagement_states } = session;
+
+  const videoUrl = id ? `${API_BASE}/session/${id}/video` : "";
+
+  // Sync video playback position → currentTime state
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onTimeUpdate = () => setCurrentTime(video.currentTime);
+    video.addEventListener("timeupdate", onTimeUpdate);
+    return () => video.removeEventListener("timeupdate", onTimeUpdate);
+  }, [videoError]);
+
+  const seekTo = useCallback(
+    (time: number) => {
+      const clamped = Math.max(0, Math.min(duration, time));
+      setCurrentTime(clamped);
+      if (videoRef.current) {
+        videoRef.current.currentTime = clamped;
+      }
+    },
+    [duration]
+  );
 
   const handleTimelineClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
       const pct = (e.clientX - rect.left) / rect.width;
-      setCurrentTime(Math.max(0, Math.min(duration, pct * duration)));
+      seekTo(pct * duration);
     },
-    [duration]
+    [duration, seekTo]
   );
 
   const activeEventIdx = events.reduce((closest, ev, idx) => {
@@ -111,15 +137,29 @@ const TimelinePage = () => {
         </Card>
       </div>
 
-      {/* Video Player Placeholder */}
+      {/* Video Player */}
       <Card className="bg-card border-border overflow-hidden">
-        <div className="relative aspect-video bg-background flex items-center justify-center">
-          <div className="text-center text-muted-foreground">
-            <Play className="h-12 w-12 mx-auto mb-2 opacity-40" />
-            <p className="text-sm">Video playback — connect to upload</p>
-          </div>
+        <div className="relative aspect-video bg-background">
+          {!videoError && videoUrl ? (
+            <video
+              ref={videoRef}
+              src={videoUrl}
+              className="w-full h-full object-contain bg-black"
+              controls
+              onError={() => setVideoError(true)}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="text-center text-muted-foreground">
+                <Play className="h-12 w-12 mx-auto mb-2 opacity-40" />
+                <p className="text-sm">
+                  {isUsingMock ? "Video not available in demo mode" : "Video not available"}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-        {/* Scrub bar */}
+        {/* Scrub bar (always visible — syncs with video when available) */}
         <div className="px-4 py-2 flex items-center gap-3">
           <span className="text-xs text-muted-foreground font-mono w-12">
             {formatTime(currentTime)}
@@ -228,7 +268,7 @@ const TimelinePage = () => {
             return (
               <button
                 key={i}
-                onClick={() => setCurrentTime(ev.timestamp)}
+                onClick={() => seekTo(ev.timestamp)}
                 className={`w-full flex items-center gap-4 px-4 py-2.5 text-left text-sm transition-colors hover:bg-accent/50 ${
                   isActive ? "bg-primary/10" : i % 2 === 0 ? "bg-transparent" : "bg-accent/20"
                 }`}
