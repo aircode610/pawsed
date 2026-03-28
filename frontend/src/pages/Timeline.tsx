@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { Play, Eye, Moon, CircleDot, ArrowLeft, ArrowRight, AlertCircle, Scan } from "lucide-react";
+import { Play, Eye, Moon, CircleDot, ArrowLeft, ArrowRight, ArrowDown, AlertCircle, Scan } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,6 +34,8 @@ function EventIcon({ type, direction }: { type: EventType; direction?: string })
       return <CircleDot className={cls} />;
     case "looked_away":
       return direction === "right" ? <ArrowRight className={cls} /> : <ArrowLeft className={cls} />;
+    case "looked_down":
+      return <ArrowDown className={cls} />;
     case "zoned_out":
       return <Moon className={cls} />;
     default:

@@ -26,11 +26,13 @@ class Pipeline:
     ):
         self.feature_extractor = FeatureExtractor()
         self.classifier = EngagementClassifier(config)
+        cfg = config or ClassifierConfig()
         self.event_logger = EventLogger(
             thresholds={
-                "mar_yawn": (config or ClassifierConfig()).mar_yawn,
-                "ear_open": (config or ClassifierConfig()).ear_open,
-                "gaze_passive": (config or ClassifierConfig()).gaze_passive,
+                "mar_yawn": cfg.mar_yawn,
+                "ear_open": cfg.ear_open,
+                "gaze_passive": cfg.gaze_passive,
+                "head_pitch_disengaged": cfg.head_pitch_disengaged,
             }
         )
         self._model_path = model_path
