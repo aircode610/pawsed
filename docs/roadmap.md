@@ -8,7 +8,7 @@
 | Task | Layer/Page | Owner | Status |
 |------|-----------|-------|--------|
 | MediaPipe FaceLandmarker integration | Backend L1 | | TODO |
-| EAR, MAR, gaze, head pose extraction | Backend L2 | | TODO |
+| EAR, MAR, gaze, head pose extraction | Backend L2 | Amir | IN PROGRESS |
 | Rule-based engagement classifier | Backend L3 | | TODO |
 | Timeline event logger | Backend L4 | | TODO |
 | `/analyze` POST endpoint | Backend L7 | | TODO |
