@@ -6,7 +6,7 @@
 
 ## Product: Pawsed (paused + paws — for when attention pauses)
 
-An AI-powered student engagement detection platform. Students upload lecture videos or use their webcam live — the system analyzes facial cues (eye closure, yawning, gaze direction, head pose) and provides a detailed engagement timeline, analytics dashboard, and AI-powered study recommendations.
+An AI-powered student engagement detection platform **for lecturers**. Lecturers upload lecture recordings or use a live webcam session — the system analyzes student facial cues (eye closure, yawning, gaze direction, head pose) and provides a detailed engagement timeline, analytics dashboard, section-by-section lecture scoring, and an AI teaching coach. The target user is the instructor, not the student. All language, insights, and recommendations should be framed as teaching advice.
 
 ## Design System
 
