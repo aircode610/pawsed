@@ -57,14 +57,19 @@ const TimelinePage = () => {
 
   const videoUrl = id ? `${API_BASE}/session/${id}/video` : "";
 
-  // Sync video playback position → currentTime state
+  // Sync video playback position → currentTime state using rAF for smooth updates
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const onTimeUpdate = () => setCurrentTime(video.currentTime);
-    video.addEventListener("timeupdate", onTimeUpdate);
-    return () => video.removeEventListener("timeupdate", onTimeUpdate);
-  }, [videoError]);
+    let rafId: number;
+    const tick = () => {
+      const video = videoRef.current;
+      if (video && !video.paused && !video.ended) {
+        setCurrentTime(video.currentTime);
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
   const seekTo = useCallback(
     (time: number) => {
