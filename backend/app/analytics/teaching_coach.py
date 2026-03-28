@@ -12,7 +12,8 @@ from langchain_core.messages import SystemMessage
 from langchain_core.messages.utils import trim_messages, count_tokens_approximately
 from langgraph.graph import StateGraph, START, END, MessagesState
 
-from app.analytics.models import (
+from app.analytics.prompts import TEACHING_COACH_SYSTEM
+from app.models.analytics import (
     EngagementSegment,
     Event,
     SectionScoringResult,
@@ -104,29 +105,18 @@ def _build_system_prompt(state: dict) -> str:
             event_log += f" — {e.metadata}"
         event_log += "\n"
 
-    return f"""You are a teaching coach for university lecturers. You have full access to engagement analytics from a lecture session.
-
-Your role:
-- Help the lecturer understand WHERE and WHY they lost student attention
-- Provide specific, evidence-based teaching strategies to improve
-- Reference actual data (timestamps, percentages, events) — don't be vague
-- Be supportive and constructive — you're a coach, not a critic
-- When comparing sessions, highlight both improvements and areas to work on
-
-Tone: warm, direct, practical. Like an experienced colleague giving feedback over coffee.
-
-IMPORTANT: You are talking to the LECTURER, not a student. Frame everything as teaching advice.
-Say "your class" or "students", not "you lost focus". Recommendations should be pedagogy strategies.
-
-SESSION DATA:
-- Duration: {duration_min:.0f} minutes
-- Overall focus: {focus_pct}%
-- Time breakdown: {time_in_state['engaged']:.0f}s engaged, {time_in_state['passive']:.0f}s passive, {time_in_state['disengaged']:.0f}s disengaged
-- Events: {events_desc}
-- Danger zones: {', '.join(danger_zones) if danger_zones else 'none'}{sections_text}{history_text}{event_log}
-
-Keep responses concise but specific. Use markdown formatting (bold, bullets, numbered lists) for readability.
-When referencing times, use mm:ss format."""
+    return TEACHING_COACH_SYSTEM.format(
+        duration_min=duration_min,
+        focus_pct=focus_pct,
+        time_engaged=time_in_state["engaged"],
+        time_passive=time_in_state["passive"],
+        time_disengaged=time_in_state["disengaged"],
+        events_desc=events_desc,
+        danger_zones=", ".join(danger_zones) if danger_zones else "none",
+        sections_text=sections_text,
+        history_text=history_text,
+        event_log=event_log,
+    )
 
 
 # ---------------------------------------------------------------------------

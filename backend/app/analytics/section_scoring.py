@@ -17,7 +17,8 @@ from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, START, END
 from langchain_anthropic import ChatAnthropic
 
-from app.analytics.models import (
+from app.analytics.prompts import SECTION_SCORING_PROMPT
+from app.models.analytics import (
     Event,
     EngagementSegment,
     Section,
@@ -170,28 +171,10 @@ def generate_ai_notes(state: ScoringState) -> dict:
 
     sections_text = _format_sections_for_prompt(state.sections)
 
-    prompt = f"""You are a pedagogy expert and teaching coach analyzing a lecture for the instructor.
-The lecture was {state.session.duration / 60:.0f} minutes long.
-
-Here is the section-by-section engagement data:
-
-{sections_text}
-
-For each section, write a 1-2 sentence observation and one specific, actionable teaching suggestion.
-Use evidence-based strategies: active learning breaks, think-pair-share, polling, worked examples,
-scaffolding, varied modality. Reference the actual data (timestamps, percentages, event types).
-
-Tone: supportive coach, not critical. The goal is to help the lecturer improve.
-
-Then write a 2-3 sentence overall summary that tells the story of the lecture: what worked,
-what didn't, and the single most impactful change to make next time.
-
-Respond in this exact format (one per section, then the summary):
-
-SECTION 1: <your note>
-SECTION 2: <your note>
-...
-OVERALL: <your summary>"""
+    prompt = SECTION_SCORING_PROMPT.format(
+        duration_min=state.session.duration / 60,
+        sections_text=sections_text,
+    )
 
     response = model.invoke([{"role": "user", "content": prompt}])
     content = response.content

@@ -9,7 +9,7 @@ import pytest
 
 from langgraph.graph import StateGraph, START, END
 
-from app.analytics.models import (
+from app.models.analytics import (
     EngagementSegment,
     Event,
     SessionData,

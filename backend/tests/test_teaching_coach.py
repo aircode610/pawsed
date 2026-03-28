@@ -6,7 +6,7 @@ Tests system prompt construction (no LLM) and full conversation quality (with LL
 import os
 import pytest
 
-from app.analytics.models import (
+from app.models.analytics import (
     EngagementSegment,
     Event,
     Section,
