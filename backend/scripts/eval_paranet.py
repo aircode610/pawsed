@@ -24,7 +24,7 @@ import torch
 # Allow imports from backend/app
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.engine.paranet_classifier import ParaNet, CLASS_MAP
+from app.engine.ml.paranet_classifier import ParaNet, CLASS_MAP
 from app.models.schemas import EngagementState
 
 # ── Label mapping: folder path → class index ─────────────────────────────────

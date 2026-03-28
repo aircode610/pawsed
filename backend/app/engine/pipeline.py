@@ -6,7 +6,7 @@ import DetectionEngine and replace the TODO stub below.
 
 from app.analytics.events import Event, EventLogger
 from app.engine.classifier import ClassifierConfig, EngagementClassifier
-from app.engine.detection import DetectionEngine
+from app.engine.ml.detection import DetectionEngine
 from app.engine.features import FeatureExtractor
 from app.models.schemas import EngagementState, FrameResult
 

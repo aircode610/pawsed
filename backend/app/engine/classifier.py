@@ -85,7 +85,7 @@ def _state_to_probs(state: EngagementState, conf: float) -> np.ndarray:
 def _try_load_nn(path: str):
     """Load NNClassifier if weights exist, else return None."""
     try:
-        from app.engine.nn_classifier import NNClassifier
+        from app.engine.ml.nn_classifier import NNClassifier
         p = Path(path)
         if p.exists():
             return NNClassifier.load(p)
@@ -97,7 +97,7 @@ def _try_load_nn(path: str):
 def _try_load_paranet(path: str):
     """Load ParaNetClassifier if weights exist, else return None."""
     try:
-        from app.engine.paranet_classifier import ParaNetClassifier
+        from app.engine.ml.paranet_classifier import ParaNetClassifier
         p = Path(path)
         if p.exists():
             return ParaNetClassifier.load(p)

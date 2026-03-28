@@ -13,7 +13,7 @@ import torch.nn as nn
 from pathlib import Path
 from torch.utils.data import DataLoader, TensorDataset
 
-from app.engine.nn_classifier import EngagementNet, FEATURE_MEANS, FEATURE_STDS
+from app.engine.ml.nn_classifier import EngagementNet, FEATURE_MEANS, FEATURE_STDS
 
 # ── Config ────────────────────────────────────────────────────────────────────
 N_PER_CLASS = 10_000   # synthetic samples per class (30k total)
