@@ -135,19 +135,26 @@ def render_annotated_video(
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(tmp_path, fourcc, fps, (w, h))
 
-    # Create a fresh detector — cannot reuse the pipeline's detector because
-    # MediaPipe VIDEO mode requires monotonically increasing timestamps,
-    # and the pipeline's detector already consumed timestamps from the first pass.
-    detector = DetectionEngine(model_path=pipeline._model_path, running_mode="VIDEO")
+    # Create fresh detector and per-face pipelines
+    from app.engine.features import FeatureExtractor
+    from app.engine.classifier import EngagementClassifier
+    from app.engine.tracker import FaceTracker
 
-    pipeline.feature_extractor.reset()
-    pipeline.classifier.reset()
+    detector = DetectionEngine(
+        model_path=pipeline._model_path,
+        running_mode="VIDEO",
+        num_faces=pipeline.num_faces,
+    )
+    tracker = FaceTracker()
+    extractors: dict[int, FeatureExtractor] = {}
+    classifiers: dict[int, EngagementClassifier] = {}
+
     sample_every = max(1, int(fps / settings.processing_fps))
 
     frame_idx = 0
-    last_face_data: FaceData | None = None
-    last_state = EngagementState.DISENGAGED
-    last_features_text: list[str] = []
+    # Cache last results per face for non-sampled frames
+    last_faces: list[tuple[FaceData, EngagementState, list[str]]] = []
+    last_risk_text = ""
 
     while True:
         ret, frame_bgr = cap.read()
@@ -158,26 +165,51 @@ def render_annotated_video(
             timestamp = frame_idx / fps
             timestamp_ms = int(timestamp * 1000)
 
-            face_data = detector.detect(frame_bgr, timestamp_ms)
-            if face_data is not None:
-                features = pipeline.feature_extractor.extract(face_data, timestamp)
-                state, confidence = pipeline.classifier.classify(features)
-                last_face_data = face_data
-                last_state = state
-                last_features_text = [
-                    f"EAR: {features.ear_avg:.2f}  MAR: {features.mar:.2f}",
-                    f"Gaze: {features.gaze_score:.2f}  Yaw: {features.head_yaw:.0f}",
-                    f"Conf: {confidence:.0%}",
-                ]
-            else:
-                last_face_data = None
-                last_state = EngagementState.DISENGAGED
-                last_features_text = []
+            all_face_data = detector.detect_multi(frame_bgr, timestamp_ms)
+            assignments = tracker.update(all_face_data, timestamp)
 
-        annotated = draw_landmarks_on_frame(
-            frame_bgr.copy(), last_face_data, last_state, last_features_text
-        )
-        writer.write(annotated)
+            last_faces = []
+            disengaged_count = 0
+
+            for i, face_data in enumerate(all_face_data):
+                face_id = assignments[i][0]
+                if face_id not in extractors:
+                    extractors[face_id] = FeatureExtractor()
+                    classifiers[face_id] = EngagementClassifier(pipeline._config)
+
+                features = extractors[face_id].extract(face_data, timestamp)
+                state, confidence = classifiers[face_id].classify(features)
+
+                if state == EngagementState.DISENGAGED:
+                    disengaged_count += 1
+
+                feat_text = [
+                    f"Face {face_id} | EAR:{features.ear_avg:.2f} MAR:{features.mar:.2f}",
+                    f"Gaze:{features.gaze_score:.2f} Yaw:{features.head_yaw:.0f} [{confidence:.0%}]",
+                ]
+                last_faces.append((face_data, state, feat_text))
+
+            total = len(all_face_data)
+            if total > 0:
+                pct = disengaged_count / total * 100
+                last_risk_text = f"Classroom: {total} faces | {disengaged_count} disengaged ({pct:.0f}%)"
+            else:
+                last_risk_text = ""
+
+        # Draw all faces
+        frame_out = frame_bgr.copy()
+        for face_data, state, feat_text in last_faces:
+            draw_landmarks_on_frame(frame_out, face_data, state, feat_text)
+
+        # Draw classroom risk text at top-center
+        if last_risk_text:
+            cv2.putText(
+                frame_out, last_risk_text,
+                (w // 2 - 200, 25),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1, cv2.LINE_AA,
+            )
+
+        writer.write(frame_out)
         frame_idx += 1
 
     cap.release()

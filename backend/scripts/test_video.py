@@ -53,40 +53,48 @@ def main():
 
     # --- Summary ---
     total_frames = len(results)
-    faces_detected = sum(1 for r in results if r.face_detected)
+    frames_with_faces = sum(1 for r in results if r.face_detected)
+    max_faces = max((r.total_faces for r in results), default=0)
     engaged = sum(1 for r in results if r.state.value == "engaged")
     passive = sum(1 for r in results if r.state.value == "passive")
     disengaged = sum(1 for r in results if r.state.value == "disengaged")
 
-    print(f"\nDuration:        {fmt_time(duration)} ({duration:.1f}s)")
-    print(f"Frames sampled:  {total_frames}")
-    print(f"Faces detected:  {faces_detected}/{total_frames} ({faces_detected/max(total_frames,1)*100:.0f}%)")
-    print(f"\nEngagement breakdown:")
+    # Risk summary
+    risk_counts = {}
+    for r in results:
+        risk_counts[r.risk_level.value] = risk_counts.get(r.risk_level.value, 0) + 1
+
+    print(f"\nDuration:         {fmt_time(duration)} ({duration:.1f}s)")
+    print(f"Frames sampled:   {total_frames}")
+    print(f"Frames with face: {frames_with_faces}/{total_frames} ({frames_with_faces/max(total_frames,1)*100:.0f}%)")
+    print(f"Max faces seen:   {max_faces}")
+    print(f"\nEngagement (aggregate):")
     print(f"  Engaged:     {engaged:4d} frames ({engaged/max(total_frames,1)*100:.1f}%)")
     print(f"  Passive:     {passive:4d} frames ({passive/max(total_frames,1)*100:.1f}%)")
     print(f"  Disengaged:  {disengaged:4d} frames ({disengaged/max(total_frames,1)*100:.1f}%)")
+    print(f"\nClassroom risk levels:")
+    for level in ["low", "moderate", "high", "critical"]:
+        count = risk_counts.get(level, 0)
+        if count > 0:
+            print(f"  {level.capitalize():10s} {count:4d} frames ({count/max(total_frames,1)*100:.1f}%)")
 
-    # --- Feature samples ---
-    print(f"\n{'='*60}")
-    print("Sample feature vectors (every ~10s):")
-    print(f"{'='*60}")
+    # --- Multi-face samples ---
+    print(f"\n{'='*70}")
+    print("Sample frames (every ~10s):")
+    print(f"{'='*70}")
     sample_interval = max(1, int(10 * len(results) / max(duration, 1)))
-    print(f"{'Time':>6} {'State':>12} {'EAR':>5} {'MAR':>5} {'Gaze':>5} {'Yaw':>6} {'Pitch':>6} {'ExprVar':>8} {'Face':>5}")
-    print("-" * 65)
     for i in range(0, len(results), sample_interval):
         r = results[i]
-        f = r.features
-        print(
-            f"{fmt_time(r.timestamp):>6} "
-            f"{r.state.value:>12} "
-            f"{f.ear_avg:5.3f} "
-            f"{f.mar:5.3f} "
-            f"{f.gaze_score:5.3f} "
-            f"{f.head_yaw:6.1f} "
-            f"{f.head_pitch:6.1f} "
-            f"{f.expression_variance:8.4f} "
-            f"{'yes' if r.face_detected else 'NO':>5}"
-        )
+        print(f"\n  {fmt_time(r.timestamp)} | {r.total_faces} faces | risk: {r.risk_level.value} | {r.disengaged_count} disengaged ({r.disengaged_pct:.0f}%)")
+        for face in r.faces:
+            f = face.features
+            print(
+                f"    Face {face.face_id:2d}: {face.state.value:>12} "
+                f"EAR={f.ear_avg:.2f} MAR={f.mar:.2f} Gaze={f.gaze_score:.2f} "
+                f"Yaw={f.head_yaw:.0f} Pitch={f.head_pitch:.0f}"
+            )
+        if not r.faces:
+            print("    (no faces detected)")
 
     # --- Events ---
     if events:

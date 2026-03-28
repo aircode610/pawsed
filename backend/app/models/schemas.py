@@ -83,10 +83,67 @@ class FeatureVector:
 
 
 @dataclass
-class FrameResult:
-    """Complete output for a single processed frame."""
+class FaceResult:
+    """Engagement result for one tracked face in a frame."""
 
-    timestamp: float
+    face_id: int             # Tracked face ID (stable across frames)
     features: FeatureVector
     state: EngagementState
     face_detected: bool = True
+    centroid_x: float = 0.0  # Face center for tracking (normalized 0-1)
+    centroid_y: float = 0.0
+
+
+class RiskLevel(str, Enum):
+    LOW = "low"              # Most students engaged
+    MODERATE = "moderate"    # Some students drifting
+    HIGH = "high"            # Many students disengaged
+    CRITICAL = "critical"    # Majority disengaged — lecture is failing
+
+
+@dataclass
+class FrameResult:
+    """Complete output for a single processed frame (all faces)."""
+
+    timestamp: float
+    faces: list[FaceResult] = field(default_factory=list)
+    risk_level: RiskLevel = RiskLevel.LOW
+    disengaged_count: int = 0
+    total_faces: int = 0
+    disengaged_pct: float = 0.0
+
+    # Backward compat — aggregate state from all faces
+    @property
+    def features(self) -> FeatureVector:
+        """Return features of the first face (backward compat)."""
+        if self.faces:
+            return self.faces[0].features
+        return FeatureVector(
+            ear_left=0.0, ear_right=0.0, ear_avg=0.0,
+            mar=0.0, gaze_score=0.0, gaze_horizontal=0.0, gaze_vertical=0.0,
+            head_pitch=0.0, head_yaw=0.0, head_roll=0.0,
+            expression_variance=0.0, timestamp=self.timestamp,
+        )
+
+    @property
+    def state(self) -> EngagementState:
+        """Return the majority engagement state across all faces.
+
+        Uses the classroom-level disengaged_pct to determine the overall state,
+        so 1 person disengaged out of 10 doesn't tank the whole frame.
+        """
+        if not self.faces:
+            return EngagementState.DISENGAGED
+        # >50% disengaged = frame is disengaged
+        if self.disengaged_pct > 50:
+            return EngagementState.DISENGAGED
+        # >50% passive+disengaged = frame is passive
+        passive_count = sum(1 for f in self.faces if f.state == EngagementState.PASSIVE)
+        passive_pct = ((passive_count + self.disengaged_count) / self.total_faces * 100) if self.total_faces > 0 else 0
+        if passive_pct > 50:
+            return EngagementState.PASSIVE
+        return EngagementState.ENGAGED
+
+    @property
+    def face_detected(self) -> bool:
+        return self.total_faces > 0

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
 
     # Upload limits
-    max_upload_mb: int = 100
+    max_upload_mb: int = 300
 
     class Config:
         env_file = ".env"

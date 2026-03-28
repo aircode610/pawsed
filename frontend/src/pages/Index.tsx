@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { analyzeVideo } from "@/lib/api";
 
 const ACCEPTED_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
-const MAX_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_SIZE = 300 * 1024 * 1024; // 300MB
 
 function formatSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -31,7 +31,7 @@ const UploadPage = () => {
       return;
     }
     if (f.size > MAX_SIZE) {
-      setError("File too large. Maximum size is 100MB.");
+      setError("File too large. Maximum size is 300MB.");
       return;
     }
     setFile(f);
@@ -127,7 +127,7 @@ const UploadPage = () => {
               </Button>
 
               <p className="text-xs text-muted-foreground mt-3 text-center">
-                MP4, WebM, MOV — Max 100MB
+                MP4, WebM, MOV — Max 300MB
               </p>
 
               <input

@@ -83,12 +83,19 @@ def save_session_results(
         breakdown[e.event_type] = breakdown.get(e.event_type, 0) + 1
 
     # Engagement curve: average engagement score per 60-second bin
+    # For multi-face: use per-frame engaged percentage (not binary state)
     bin_size = 60.0
     num_bins = max(1, int(total / bin_size) + 1)
     bins: list[list[float]] = [[] for _ in range(num_bins)]
     for r in results:
         idx = min(int(r.timestamp / bin_size), num_bins - 1)
-        score = 1.0 if r.state.value == "engaged" else (0.5 if r.state.value == "passive" else 0.0)
+        if r.total_faces > 0:
+            # Score based on actual per-face breakdown
+            engaged_count = sum(1 for f in r.faces if f.state.value == "engaged")
+            passive_count = sum(1 for f in r.faces if f.state.value == "passive")
+            score = (engaged_count + passive_count * 0.5) / r.total_faces
+        else:
+            score = 0.0
         bins[idx].append(score)
     engagement_curve = [
         round(sum(b) / len(b), 2) if b else 0.0 for b in bins
@@ -104,6 +111,51 @@ def save_session_results(
                 "avg_score": 0.0,
             })
 
+    # Multi-face classroom metrics
+    risk_curve = []  # per-bin risk data
+    face_count_curve = []  # how many faces per bin
+    for bin_idx in range(num_bins):
+        bin_results = [
+            r for r in results
+            if min(int(r.timestamp / bin_size), num_bins - 1) == bin_idx
+        ]
+        if bin_results:
+            avg_disengaged_pct = sum(r.disengaged_pct for r in bin_results) / len(bin_results)
+            avg_faces = sum(r.total_faces for r in bin_results) / len(bin_results)
+            risk_curve.append(round(avg_disengaged_pct, 1))
+            face_count_curve.append(round(avg_faces, 1))
+        else:
+            risk_curve.append(0.0)
+            face_count_curve.append(0.0)
+
+    # Peak risk moments
+    peak_risk_frames = [
+        r for r in results
+        if r.risk_level.value in ("high", "critical")
+    ]
+    peak_risk_moments = []
+    if peak_risk_frames:
+        # Collapse into time ranges
+        start = peak_risk_frames[0].timestamp
+        prev_t = start
+        for r in peak_risk_frames[1:]:
+            if r.timestamp - prev_t > 2.0:  # gap > 2s = new range
+                peak_risk_moments.append({
+                    "start": round(start, 1),
+                    "end": round(prev_t, 1),
+                    "risk_level": "high",
+                })
+                start = r.timestamp
+            prev_t = r.timestamp
+        peak_risk_moments.append({
+            "start": round(start, 1),
+            "end": round(prev_t, 1),
+            "risk_level": "high",
+        })
+
+    # Max simultaneous faces seen
+    max_faces = max((r.total_faces for r in results), default=0)
+
     data.update({
         "status": "done",
         "duration": round(duration, 2),
@@ -114,6 +166,11 @@ def save_session_results(
             "distraction_breakdown": breakdown,
             "engagement_curve": engagement_curve,
             "danger_zones": danger_zones,
+            # Multi-face classroom data
+            "max_faces_detected": max_faces,
+            "risk_curve": risk_curve,
+            "face_count_curve": face_count_curve,
+            "peak_risk_moments": peak_risk_moments,
         },
         "events": [
             {
