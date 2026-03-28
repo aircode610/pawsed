@@ -1,11 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
-import { ArrowUpDown, TrendingUp, TrendingDown } from "lucide-react";
+import { ArrowUpDown, TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import { getSessions } from "@/lib/api";
 import { mockSessionList } from "@/lib/mock-data";
+import type { SessionSummary } from "@/lib/types";
 
 type SortKey = "date" | "focus";
 
@@ -27,13 +30,29 @@ const SessionHistoryPage = () => {
   const navigate = useNavigate();
   const [sortBy, setSortBy] = useState<SortKey>("date");
   const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUsingMock, setIsUsingMock] = useState(false);
+
+  useEffect(() => {
+    getSessions()
+      .then((data) => {
+        setSessions(data.length > 0 ? data : mockSessionList as any);
+        setIsUsingMock(data.length === 0);
+      })
+      .catch(() => {
+        setSessions(mockSessionList as any);
+        setIsUsingMock(true);
+      })
+      .finally(() => setIsLoading(false));
+  }, []);
 
   const sorted = useMemo(() => {
-    const list = [...mockSessionList];
+    const list = [...sessions];
     if (sortBy === "date") list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     else list.sort((a, b) => b.focus_time_pct - a.focus_time_pct);
     return list;
-  }, [sortBy]);
+  }, [sortBy, sessions]);
 
   const toggleCompare = (id: string) => {
     setCompareIds((prev) => {
@@ -46,17 +65,28 @@ const SessionHistoryPage = () => {
 
   const compareArr = Array.from(compareIds);
   const showCompare = compareArr.length === 2;
-  const compA = showCompare ? mockSessionList.find((s) => s.session_id === compareArr[0]) : null;
-  const compB = showCompare ? mockSessionList.find((s) => s.session_id === compareArr[1]) : null;
+  const compA = showCompare ? sessions.find((s) => s.session_id === compareArr[0]) : null;
+  const compB = showCompare ? sessions.find((s) => s.session_id === compareArr[1]) : null;
   const delta = compA && compB ? compB.focus_time_pct - compA.focus_time_pct : 0;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <div className="grid md:grid-cols-2 gap-4">
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24 rounded-lg" />)}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Session History</h1>
-          <p className="text-sm text-muted-foreground">Track your progress across sessions</p>
+          <h1 className="text-2xl font-bold text-foreground">Lecture History</h1>
+          <p className="text-sm text-muted-foreground">Track class engagement across your lectures</p>
         </div>
         <Button
           variant="outline"
@@ -68,6 +98,19 @@ const SessionHistoryPage = () => {
           {sortBy === "date" ? "Date" : "Focus Score"}
         </Button>
       </div>
+
+      {isUsingMock && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          Using demo data — backend not connected
+        </div>
+      )}
+
+      {sorted.length === 0 && (
+        <Card className="bg-card border-border p-8 text-center">
+          <p className="text-muted-foreground">No lectures analyzed yet. Upload a video to get started.</p>
+        </Card>
+      )}
 
       {/* Grid */}
       <div className="grid md:grid-cols-2 gap-4">
@@ -94,19 +137,14 @@ const SessionHistoryPage = () => {
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {fmtDate(sess.created_at)} · {fmtDuration(sess.duration)}
                 </p>
-                <p className="text-xs text-muted-foreground mt-0.5">{sess.event_count} events</p>
+                {sess.event_count != null && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{sess.event_count} events</p>
+                )}
               </div>
 
-              <div className="flex items-center gap-3 shrink-0">
-                <ResponsiveContainer width={80} height={30}>
-                  <LineChart data={sess.engagement_curve.map((v, i) => ({ i, v }))}>
-                    <Line type="monotone" dataKey="v" stroke="#22c55e" strokeWidth={1.5} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-                <span className={`text-2xl font-bold ${scoreColor(sess.focus_time_pct)}`}>
-                  {sess.focus_time_pct}%
-                </span>
-              </div>
+              <span className={`text-2xl font-bold ${scoreColor(sess.focus_time_pct)}`}>
+                {sess.focus_time_pct}%
+              </span>
             </div>
           </Card>
         ))}

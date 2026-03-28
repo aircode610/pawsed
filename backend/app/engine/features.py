@@ -25,13 +25,17 @@ from app.models.schemas import (
 RIGHT_EYE = (33, 160, 158, 133, 153, 144)
 # Left eye
 LEFT_EYE = (362, 385, 387, 263, 373, 380)
-# Mouth — outer lip landmarks for MAR
+# Mouth — inner lip opening landmarks for MAR
+# For reliable yawn detection with MediaPipe, we use the jawOpen blendshape
+# directly (0.0 = closed, ~0.7+ = yawning) instead of computing from
+# landmarks, since the 478-mesh lip landmarks measure lip surface position
+# rather than mouth opening. Landmark-based MAR is kept as a fallback.
 MOUTH_TOP = (13,)
 MOUTH_BOTTOM = (14,)
 MOUTH_LEFT = (78,)
 MOUTH_RIGHT = (308,)
-MOUTH_UPPER_MID = (12, 11)
-MOUTH_LOWER_MID = (16, 17)
+MOUTH_UPPER_MID = (82, 312)
+MOUTH_LOWER_MID = (87, 317)
 
 
 def _landmark_dist(a: Landmark, b: Landmark) -> float:
@@ -71,12 +75,18 @@ def compute_ear_both(landmarks: list[Landmark]) -> tuple[float, float, float]:
     return ear_left, ear_right, ear_avg
 
 
-def compute_mar(landmarks: list[Landmark]) -> float:
+def compute_mar(landmarks: list[Landmark], blendshapes: BlendshapeScores | None = None) -> float:
     """Compute Mouth Aspect Ratio for yawn detection.
 
-    MAR = (||upper_mid1-lower_mid1|| + ||upper_mid2-lower_mid2|| + ||top-bottom||)
-          / (2 * ||left_corner-right_corner||)
+    Uses the jawOpen blendshape from MediaPipe when available (0.0-1.0 scale,
+    already calibrated for mouth opening). Falls back to landmark-based
+    calculation if blendshapes are not provided.
     """
+    if blendshapes is not None:
+        # jawOpen is already a 0-1 score: 0 = closed, ~0.7+ = yawning
+        return blendshapes.jaw_open
+
+    # Fallback: landmark-based MAR
     top = landmarks[MOUTH_TOP[0]]
     bottom = landmarks[MOUTH_BOTTOM[0]]
     left = landmarks[MOUTH_LEFT[0]]
@@ -185,7 +195,7 @@ class FeatureExtractor:
     def extract(self, face_data: FaceData, timestamp: float = 0.0) -> FeatureVector:
         """Extract all engagement features from a single frame's face data."""
         ear_left, ear_right, ear_avg = compute_ear_both(face_data.landmarks)
-        mar = compute_mar(face_data.landmarks)
+        mar = compute_mar(face_data.landmarks, face_data.blendshapes)
         gaze_score, gaze_h, gaze_v = compute_gaze(face_data.blendshapes)
         pitch, yaw, roll = compute_head_pose(face_data.transformation_matrix)
         expr_var = self.variance_tracker.update(face_data.blendshapes)

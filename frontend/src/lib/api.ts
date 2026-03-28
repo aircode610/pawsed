@@ -1,4 +1,4 @@
-import type { SessionData, SessionSummary, InsightData } from "./types";
+import type { SessionData, SessionSummary, SectionScoringData, ChatMessage } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -14,10 +14,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export async function analyzeVideo(file: File): Promise<{ session_id: string }> {
   const form = new FormData();
   form.append("file", file);
-  return request<{ session_id: string }>("/analyze", {
+  const res = await request<{ data: { session_id: string; status: string } }>("/analyze", {
     method: "POST",
     body: form,
   });
+  return { session_id: res.data.session_id };
 }
 
 export async function getSession(id: string): Promise<SessionData> {
@@ -25,10 +26,27 @@ export async function getSession(id: string): Promise<SessionData> {
   return res.data;
 }
 
-export async function getInsights(id: string): Promise<InsightData> {
-  return request<InsightData>(`/session/${id}/insights`);
+export async function getSessions(): Promise<SessionSummary[]> {
+  const res = await request<{ data: SessionSummary[]; meta: Record<string, number> }>("/sessions");
+  return res.data;
 }
 
-export async function getSessions(): Promise<SessionSummary[]> {
-  return request<SessionSummary[]>("/sessions");
+export async function getSectionScoring(id: string): Promise<SectionScoringData> {
+  const res = await request<{ data: SectionScoringData }>(`/session/${id}/insights/sections`);
+  return res.data;
+}
+
+export async function sendCoachMessage(
+  id: string,
+  messages: ChatMessage[],
+): Promise<string> {
+  const res = await request<{ data: { role: string; content: string } }>(
+    `/session/${id}/insights/chat`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
+    },
+  );
+  return res.data.content;
 }
