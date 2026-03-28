@@ -1,0 +1,174 @@
+{
+  "session_id": "6be90b0bb388457bba9779b49f2020df",
+  "created_at": "2026-03-28T19:33:08.676240+00:00",
+  "status": "done",
+  "video_filename": "0328.mp4",
+  "duration": 26.43,
+  "analytics": {
+    "focus_time_pct": 32.2,
+    "distraction_time_pct": 67.8,
+    "longest_focus_streak": 2.3,
+    "distraction_breakdown": {
+      "face_lost": 2,
+      "yawn": 3
+    },
+    "engagement_curve": [
+      0.35
+    ],
+    "danger_zones": []
+  },
+  "events": [
+    {
+      "timestamp": 0.0,
+      "event_type": "face_lost",
+      "duration": 2.7,
+      "confidence": 0.95,
+      "metadata": {}
+    },
+    {
+      "timestamp": 5.2,
+      "event_type": "face_lost",
+      "duration": 1.3,
+      "confidence": 0.95,
+      "metadata": {}
+    },
+    {
+      "timestamp": 8.5,
+      "event_type": "yawn",
+      "duration": 2.8,
+      "confidence": 0.8,
+      "metadata": {}
+    },
+    {
+      "timestamp": 13.6,
+      "event_type": "yawn",
+      "duration": 0.5,
+      "confidence": 0.8,
+      "metadata": {}
+    },
+    {
+      "timestamp": 17.0,
+      "event_type": "yawn",
+      "duration": 9.2,
+      "confidence": 0.8,
+      "metadata": {}
+    }
+  ],
+  "engagement_states": [
+    {
+      "start": 0.0,
+      "end": 2.7,
+      "state": "disengaged"
+    },
+    {
+      "start": 2.7,
+      "end": 3.4,
+      "state": "engaged"
+    },
+    {
+      "start": 3.4,
+      "end": 3.6,
+      "state": "passive"
+    },
+    {
+      "start": 3.6,
+      "end": 3.8,
+      "state": "engaged"
+    },
+    {
+      "start": 3.8,
+      "end": 3.9,
+      "state": "passive"
+    },
+    {
+      "start": 3.9,
+      "end": 4.0,
+      "state": "engaged"
+    },
+    {
+      "start": 4.0,
+      "end": 4.2,
+      "state": "passive"
+    },
+    {
+      "start": 4.2,
+      "end": 4.3,
+      "state": "engaged"
+    },
+    {
+      "start": 4.3,
+      "end": 4.7,
+      "state": "passive"
+    },
+    {
+      "start": 4.7,
+      "end": 5.0,
+      "state": "engaged"
+    },
+    {
+      "start": 5.0,
+      "end": 5.2,
+      "state": "passive"
+    },
+    {
+      "start": 5.2,
+      "end": 6.5,
+      "state": "disengaged"
+    },
+    {
+      "start": 6.5,
+      "end": 7.5,
+      "state": "engaged"
+    },
+    {
+      "start": 7.5,
+      "end": 7.6,
+      "state": "passive"
+    },
+    {
+      "start": 7.6,
+      "end": 8.5,
+      "state": "engaged"
+    },
+    {
+      "start": 8.5,
+      "end": 11.3,
+      "state": "disengaged"
+    },
+    {
+      "start": 11.3,
+      "end": 13.6,
+      "state": "engaged"
+    },
+    {
+      "start": 13.6,
+      "end": 14.1,
+      "state": "disengaged"
+    },
+    {
+      "start": 14.1,
+      "end": 16.0,
+      "state": "engaged"
+    },
+    {
+      "start": 16.0,
+      "end": 16.2,
+      "state": "passive"
+    },
+    {
+      "start": 16.2,
+      "end": 17.0,
+      "state": "engaged"
+    },
+    {
+      "start": 17.0,
+      "end": 26.2,
+      "state": "disengaged"
+    },
+    {
+      "start": 26.2,
+      "end": 26.4,
+      "state": "engaged"
+    }
+  ]
+}

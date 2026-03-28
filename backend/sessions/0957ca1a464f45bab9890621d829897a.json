@@ -1,0 +1,35 @@
+{
+  "session_id": "0957ca1a464f45bab9890621d829897a",
+  "created_at": "2026-03-28T19:15:30.930507+00:00",
+  "status": "done",
+  "video_filename": "hitori-gotoh-literally-me-blade-runner-2049-moewalls-com.mp4",
+  "duration": 28.33,
+  "analytics": {
+    "focus_time_pct": 0.0,
+    "distraction_time_pct": 100.0,
+    "longest_focus_streak": 0.0,
+    "distraction_breakdown": {
+      "face_lost": 1
+    },
+    "engagement_curve": [
+      0.0
+    ],
+    "danger_zones": []
+  },
+  "events": [
+    {
+      "timestamp": 0.0,
+      "event_type": "face_lost",
+      "duration": 28.333,
+      "confidence": 0.95,
+      "metadata": {}
+    }
+  ],
+  "engagement_states": [
+    {
+      "start": 0.0,
+      "end": 28.3,
+      "state": "disengaged"
+    }
+  ]
+}
