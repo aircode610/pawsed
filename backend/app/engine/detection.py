@@ -2,7 +2,11 @@
 
 Wraps MediaPipe's FaceLandmarker to extract 478 landmarks,
 52 blendshapes, and a 4x4 facial transformation matrix per frame.
-Converts MediaPipe results into our FaceData dataclass.
+
+Uses a tiled detection strategy for video-call layouts (Zoom/Teams):
+splits the frame into a grid and detects faces per tile, then maps
+coordinates back to the full frame. This handles small faces that
+the full-frame detector would miss.
 """
 
 import os
@@ -33,25 +37,44 @@ _BLENDSHAPE_MAP = {
     "browInnerUp": "brow_inner_up",
 }
 
-# Default model path — can be overridden via constructor
 _DEFAULT_MODEL_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "models", "face_landmarker.task"
 )
 
+# Minimum face tile size in pixels — below this, tiled detection is used
+_MIN_FACE_TILE_PX = 300
+
 
 class DetectionEngine:
-    """MediaPipe FaceLandmarker wrapper.
+    """MediaPipe FaceLandmarker wrapper with tiled detection for small faces.
 
-    Supports VIDEO running mode (for pre-recorded files with timestamps)
-    and IMAGE mode (for single frames without timestamps).
+    For single-face or large-face scenarios, runs detection on the full frame.
+    For multi-face grids (Zoom/Teams), splits the frame into tiles and detects
+    on each tile independently, then maps landmarks back to full-frame coords.
     """
 
     def __init__(
         self,
         model_path: str | None = None,
         running_mode: str = "VIDEO",
-        num_faces: int = 1,
+        num_faces: int = 10,
+        tile_grid: tuple[int, int] = (3, 3),
+        tile_overlap: int = 20,
+        min_detection_confidence: float = 0.3,
+        min_presence_confidence: float = 0.3,
+        min_tracking_confidence: float = 0.3,
     ):
+        """
+        Args:
+            model_path: Path to face_landmarker.task file.
+            running_mode: "VIDEO" or "IMAGE".
+            num_faces: Max faces per tile during tiled detection.
+            tile_grid: (rows, cols) for tiled detection grid.
+            tile_overlap: Pixel overlap between tiles to catch border faces.
+            min_detection_confidence: MediaPipe detection threshold.
+            min_presence_confidence: MediaPipe presence threshold.
+            min_tracking_confidence: MediaPipe tracking threshold.
+        """
         resolved_path = model_path or _DEFAULT_MODEL_PATH
         resolved_path = os.path.abspath(resolved_path)
 
@@ -63,12 +86,19 @@ class DetectionEngine:
                 f"'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task'"
             )
 
+        self._resolved_path = resolved_path
+        self._tile_grid = tile_grid
+        self._tile_overlap = tile_overlap
+        self._num_faces_per_tile = max(2, num_faces // (tile_grid[0] * tile_grid[1]) + 1)
+
         mode = (
             vision.RunningMode.VIDEO
             if running_mode == "VIDEO"
             else vision.RunningMode.IMAGE
         )
+        self._running_mode = mode
 
+        # Full-frame detector (for VIDEO mode with timestamp tracking)
         base_options = mp.tasks.BaseOptions(model_asset_path=resolved_path)
         options = vision.FaceLandmarkerOptions(
             base_options=base_options,
@@ -76,24 +106,51 @@ class DetectionEngine:
             output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
             num_faces=num_faces,
-            min_face_detection_confidence=0.5,
-            min_face_presence_confidence=0.5,
-            min_tracking_confidence=0.5,
+            min_face_detection_confidence=min_detection_confidence,
+            min_face_presence_confidence=min_presence_confidence,
+            min_tracking_confidence=min_tracking_confidence,
         )
         self._detector = vision.FaceLandmarker.create_from_options(options)
-        self._running_mode = mode
+
+        # Tile detector (always IMAGE mode — no timestamp dependency)
+        tile_options = vision.FaceLandmarkerOptions(
+            base_options=mp.tasks.BaseOptions(model_asset_path=resolved_path),
+            running_mode=vision.RunningMode.IMAGE,
+            output_face_blendshapes=True,
+            output_facial_transformation_matrixes=True,
+            num_faces=self._num_faces_per_tile,
+            min_face_detection_confidence=min_detection_confidence,
+            min_face_presence_confidence=min_presence_confidence,
+        )
+        self._tile_detector = vision.FaceLandmarker.create_from_options(tile_options)
 
     def detect(self, frame_bgr: np.ndarray, timestamp_ms: int = 0) -> FaceData | None:
-        """Run face detection on a BGR frame.
+        """Detect first face (backward compat)."""
+        faces = self.detect_multi(frame_bgr, timestamp_ms)
+        return faces[0] if faces else None
 
-        Args:
-            frame_bgr: OpenCV BGR image (numpy array).
-            timestamp_ms: Frame timestamp in milliseconds (required for VIDEO mode).
+    def detect_multi(self, frame_bgr: np.ndarray, timestamp_ms: int = 0) -> list[FaceData]:
+        """Detect all faces, using tiled detection for small-face scenarios.
 
-        Returns:
-            FaceData if a face was detected, None otherwise.
+        First tries full-frame detection. If it finds fewer faces than expected
+        for the grid, falls back to tiled detection.
         """
-        # Convert BGR → RGB for MediaPipe
+        # Try full-frame first
+        full_faces = self._detect_full(frame_bgr, timestamp_ms)
+
+        # If we got a reasonable number, return immediately
+        expected_min = self._tile_grid[0] * self._tile_grid[1] // 2
+        if len(full_faces) >= expected_min:
+            return full_faces
+
+        # Fall back to tiled detection for small faces
+        tiled_faces = self._detect_tiled(frame_bgr)
+
+        # Return whichever found more
+        return tiled_faces if len(tiled_faces) > len(full_faces) else full_faces
+
+    def _detect_full(self, frame_bgr: np.ndarray, timestamp_ms: int = 0) -> list[FaceData]:
+        """Standard full-frame detection."""
         frame_rgb = frame_bgr[:, :, ::-1].copy()
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
 
@@ -102,44 +159,109 @@ class DetectionEngine:
         else:
             result = self._detector.detect(mp_image)
 
+        return self._parse_result(result)
+
+    def _detect_tiled(self, frame_bgr: np.ndarray) -> list[FaceData]:
+        """Split frame into tiles and detect on each independently."""
+        h, w = frame_bgr.shape[:2]
+        rows, cols = self._tile_grid
+        tile_h, tile_w = h // rows, w // cols
+        overlap = self._tile_overlap
+
+        all_faces: list[FaceData] = []
+        seen_centroids: list[tuple[float, float]] = []
+
+        for r in range(rows):
+            for c in range(cols):
+                y1 = max(0, r * tile_h - overlap)
+                y2 = min(h, (r + 1) * tile_h + overlap)
+                x1 = max(0, c * tile_w - overlap)
+                x2 = min(w, (c + 1) * tile_w + overlap)
+                tile = frame_bgr[y1:y2, x1:x2]
+
+                tile_rgb = tile[:, :, ::-1].copy()
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=tile_rgb)
+                result = self._tile_detector.detect(mp_image)
+
+                if not result.face_landmarks:
+                    continue
+
+                tile_faces = self._parse_result(result)
+                tile_h_actual = y2 - y1
+                tile_w_actual = x2 - x1
+
+                for face in tile_faces:
+                    # Remap landmarks from tile coords to full-frame coords
+                    remapped_landmarks = []
+                    for lm in face.landmarks:
+                        remapped_landmarks.append(Landmark(
+                            x=(x1 + lm.x * tile_w_actual) / w,
+                            y=(y1 + lm.y * tile_h_actual) / h,
+                            z=lm.z,
+                        ))
+
+                    # Deduplicate: skip if centroid is too close to an existing face
+                    nose = remapped_landmarks[1]
+                    cx, cy = nose.x, nose.y
+                    is_dup = False
+                    for sx, sy in seen_centroids:
+                        if abs(cx - sx) < 0.05 and abs(cy - sy) < 0.05:
+                            is_dup = True
+                            break
+                    if is_dup:
+                        continue
+
+                    seen_centroids.append((cx, cy))
+                    all_faces.append(FaceData(
+                        landmarks=remapped_landmarks,
+                        blendshapes=face.blendshapes,
+                        transformation_matrix=face.transformation_matrix,
+                    ))
+
+        return all_faces
+
+    def _parse_result(self, result) -> list[FaceData]:
+        """Convert MediaPipe FaceLandmarkerResult to list of FaceData."""
         if not result.face_landmarks:
-            return None
+            return []
 
-        # Take the first face
-        raw_landmarks = result.face_landmarks[0]
-        raw_blendshapes = result.face_blendshapes[0] if result.face_blendshapes else []
-        raw_matrix = (
-            result.facial_transformation_matrixes[0]
-            if result.facial_transformation_matrixes is not None
-            and len(result.facial_transformation_matrixes) > 0
-            else np.eye(4)
-        )
+        faces = []
+        for i in range(len(result.face_landmarks)):
+            raw_landmarks = result.face_landmarks[i]
+            raw_blendshapes = (
+                result.face_blendshapes[i]
+                if result.face_blendshapes and i < len(result.face_blendshapes)
+                else []
+            )
+            raw_matrix = (
+                result.facial_transformation_matrixes[i]
+                if result.facial_transformation_matrixes is not None
+                and i < len(result.facial_transformation_matrixes)
+                else np.eye(4)
+            )
 
-        # Convert landmarks
-        landmarks = [
-            Landmark(x=lm.x, y=lm.y, z=lm.z)
-            for lm in raw_landmarks
-        ]
+            landmarks = [Landmark(x=lm.x, y=lm.y, z=lm.z) for lm in raw_landmarks]
 
-        # Convert blendshapes
-        bs_kwargs = {}
-        for category in raw_blendshapes:
-            field_name = _BLENDSHAPE_MAP.get(category.category_name)
-            if field_name:
-                bs_kwargs[field_name] = category.score
-        blendshapes = BlendshapeScores(**bs_kwargs)
+            bs_kwargs = {}
+            for category in raw_blendshapes:
+                field_name = _BLENDSHAPE_MAP.get(category.category_name)
+                if field_name:
+                    bs_kwargs[field_name] = category.score
+            blendshapes = BlendshapeScores(**bs_kwargs)
 
-        # Transformation matrix
-        matrix = np.array(raw_matrix, dtype=np.float64)
-        if matrix.shape != (4, 4):
-            matrix = np.eye(4)
+            matrix = np.array(raw_matrix, dtype=np.float64)
+            if matrix.shape != (4, 4):
+                matrix = np.eye(4)
 
-        return FaceData(
-            landmarks=landmarks,
-            blendshapes=blendshapes,
-            transformation_matrix=matrix,
-        )
+            faces.append(FaceData(
+                landmarks=landmarks,
+                blendshapes=blendshapes,
+                transformation_matrix=matrix,
+            ))
+
+        return faces
 
     def close(self):
-        """Release the MediaPipe detector resources."""
+        """Release resources."""
         self._detector.close()
+        self._tile_detector.close()
