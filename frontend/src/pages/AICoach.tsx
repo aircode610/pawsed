@@ -1,92 +1,120 @@
-import { useState, useEffect, useCallback } from "react";
-import { Bot, RefreshCw } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
+import { Sparkles, AlertTriangle, Eye, ChevronRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { SessionSubNav } from "@/components/SessionSubNav";
-import { mockInsights } from "@/lib/mock-data";
+import { TeachingCoachChat } from "@/components/TeachingCoachChat";
+import { mockSectionScoring, mockSession } from "@/lib/mock-data";
 
-const CATEGORY_STYLE: Record<string, { border: string; badge: string; label: string }> = {
-  timing:        { border: "border-l-blue-500",   badge: "bg-blue-500/15 text-blue-400",   label: "Timing" },
-  technique:     { border: "border-l-purple-500", badge: "bg-purple-500/15 text-purple-400", label: "Technique" },
-  encouragement: { border: "border-l-engage-engaged", badge: "bg-engage-engaged/15 text-engage-engaged", label: "Encouragement" },
+const fmt = (s: number) => {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+};
+
+const scoreColor = (pct: number) => {
+  if (pct >= 70) return "text-engage-engaged";
+  if (pct >= 50) return "text-engage-passive";
+  return "text-engage-disengaged";
 };
 
 const AICoachPage = () => {
-  const [loading, setLoading] = useState(true);
-  const [regenerating, setRegenerating] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 1500);
-    return () => clearTimeout(t);
-  }, []);
-
-  const handleRegenerate = useCallback(() => {
-    setRegenerating(true);
-    setTimeout(() => setRegenerating(false), 2000);
-  }, []);
-
-  const showSkeleton = loading || regenerating;
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { sections, overall_summary } = mockSectionScoring;
+  const dangerCount = mockSession.analytics.danger_zones.length;
 
   return (
     <div className="space-y-4">
       <SessionSubNav />
 
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-2">
-        <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-          <Bot className="h-5 w-5 text-primary" />
+      {/* Overall Summary */}
+      <Card className="bg-card border-border border-l-[3px] border-l-primary p-6 space-y-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-primary" />
+          <h1 className="text-lg font-semibold text-foreground">Lecture Summary</h1>
         </div>
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">Your AI Study Coach</h1>
-          <p className="text-sm text-muted-foreground">Personalized recommendations based on your session data</p>
+        <p className="text-sm text-muted-foreground leading-relaxed">{overall_summary}</p>
+        <div className="flex gap-6 pt-1 text-sm">
+          <span className="text-muted-foreground">
+            Overall: <span className="font-semibold text-foreground">{mockSession.analytics.focus_time_pct}%</span> engaged
+          </span>
+          <span className="text-muted-foreground">
+            Danger zones: <span className="font-semibold text-foreground">{dangerCount}</span>
+          </span>
         </div>
+      </Card>
+
+      {/* Section Cards */}
+      <div className="space-y-4">
+        {sections.map((sec) => {
+          const isDanger = sec.engagement_pct < 50;
+          return (
+            <Card
+              key={sec.label}
+              onClick={() => navigate(`/session/${id}/timeline`)}
+              className={`bg-card border-border p-5 space-y-3 cursor-pointer transition-transform hover:scale-[1.01] ${
+                isDanger
+                  ? "border-l-[3px] border-l-engage-disengaged bg-engage-disengaged/[0.03]"
+                  : ""
+              }`}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold text-foreground">{sec.label}</h3>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{fmt(sec.start)} – {fmt(sec.end)}</span>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </div>
+              </div>
+
+              {/* Score */}
+              <span className={`text-3xl font-bold ${scoreColor(sec.engagement_pct)}`}>
+                {sec.engagement_pct}%
+              </span>
+
+              {/* State breakdown bar */}
+              <div className="flex h-2 w-full rounded-full overflow-hidden">
+                <div
+                  className="bg-engage-engaged"
+                  style={{ width: `${sec.state_breakdown.engaged}%` }}
+                />
+                <div
+                  className="bg-engage-passive"
+                  style={{ width: `${sec.state_breakdown.passive}%` }}
+                />
+                <div
+                  className="bg-engage-disengaged"
+                  style={{ width: `${sec.state_breakdown.disengaged}%` }}
+                />
+              </div>
+
+              {/* Top event */}
+              {sec.top_event && (
+                <div className="flex items-center gap-1.5">
+                  {sec.top_event.includes("looked_away") ? (
+                    <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                  ) : (
+                    <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                  <span className="text-xs text-muted-foreground bg-muted/50 rounded-full px-2 py-0.5">
+                    {sec.top_event}
+                  </span>
+                </div>
+              )}
+
+              {/* AI note */}
+              <p className="text-sm text-muted-foreground leading-relaxed">{sec.ai_note}</p>
+            </Card>
+          );
+        })}
       </div>
 
-      {/* Cards */}
-      {showSkeleton ? (
-        <div className="space-y-4">
-          <p className="text-xs text-muted-foreground animate-pulse text-center">
-            Your AI coach is analyzing your session...
-          </p>
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-32 rounded-lg" />
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {mockInsights.recommendations.map((rec, i) => {
-            const style = CATEGORY_STYLE[rec.category] || CATEGORY_STYLE.technique;
-            return (
-              <Card
-                key={i}
-                className={`bg-card border-border border-l-[3px] ${style.border} p-5 space-y-2`}
-              >
-                <span className={`inline-block text-[10px] font-semibold uppercase tracking-wider rounded-full px-2 py-0.5 ${style.badge}`}>
-                  {style.label}
-                </span>
-                <h3 className="text-base font-semibold text-foreground">{rec.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{rec.body}</p>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+      <p className="text-[10px] text-muted-foreground text-center pt-2">
+        Analysis powered by Claude AI
+      </p>
 
-      {/* Actions */}
-      <div className="flex flex-col items-center gap-3 pt-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          onClick={handleRegenerate}
-          disabled={showSkeleton}
-        >
-          <RefreshCw className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`} />
-          Regenerate Suggestions
-        </Button>
-        <p className="text-[10px] text-muted-foreground">Powered by Claude AI</p>
-      </div>
+      {/* Teaching Coach Chat */}
+      <TeachingCoachChat />
     </div>
   );
 };

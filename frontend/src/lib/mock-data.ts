@@ -56,36 +56,62 @@ export const mockSession = {
   ],
 };
 
-export const mockInsights = {
+export const mockSectionScoring = {
   session_id: "demo",
-  recommendations: [
+  overall_summary:
+    "Your lecture had a strong opening and close, but lost the class between minutes 12–18. That 6-minute danger zone brought your overall score down from what could have been 80%+ to 72.5%. The fix is structural — break that middle section with an interactive moment.",
+  sections: [
     {
-      title: "Schedule study sessions earlier",
-      body: "Your yawn frequency peaked around the 14-minute mark (4:30pm equivalent). Research shows alertness drops in the late afternoon. Try scheduling your most demanding study sessions before 2pm when your natural energy is higher.",
-      category: "timing",
+      label: "Introduction",
+      start: 0,
+      end: 300,
+      engagement_pct: 89.2,
+      state_breakdown: { engaged: 82, passive: 14, disengaged: 4 },
+      top_event: null as string | null,
+      ai_note:
+        "Strong opening — students were attentive. Whatever you did here (greeting, agenda overview, hook question), keep doing it.",
     },
     {
-      title: "Break up theory-heavy sections",
-      body: "You lost focus 3 times between minutes 12–18, which is the danger zone we identified. This coincided with sustained passive engagement. Try the Pomodoro technique — review that segment in 10-minute focused bursts with 2-minute breaks.",
-      category: "technique",
+      label: "Core Content A",
+      start: 300,
+      end: 720,
+      engagement_pct: 71.5,
+      state_breakdown: { engaged: 60, passive: 28, disengaged: 12 },
+      top_event: "looked_away (4 times)",
+      ai_note:
+        "Gradual drift starting around minute 7. Students were passive but not fully checked out — a mid-point check-in question or quick poll could reset attention here.",
     },
     {
-      title: "Build on your focus strength",
-      body: "Your longest focus streak was 11 minutes — that's a solid foundation! Try extending it to 15 minutes by removing phone notifications during study blocks. Even small distractions reset your focus timer.",
-      category: "encouragement",
+      label: "Danger Zone",
+      start: 720,
+      end: 1080,
+      engagement_pct: 38.4,
+      state_breakdown: { engaged: 25, passive: 30, disengaged: 45 },
+      top_event: "zoned_out (45s), yawn (2 times)",
+      ai_note:
+        "This was the lowest-engagement stretch. 45% of the time was spent disengaged. This often happens during extended theory without interaction. Consider breaking this into two shorter blocks with an active learning exercise (think-pair-share, quick problem) in between.",
     },
     {
-      title: "Address the 'looking away' pattern",
-      body: "Looking away was your most common distraction (7 times). This often happens when the material isn't engaging visually. Try taking handwritten notes during these sections — it forces active engagement with the content.",
-      category: "technique",
+      label: "Recovery",
+      start: 1080,
+      end: 1500,
+      engagement_pct: 74.8,
+      state_breakdown: { engaged: 65, passive: 25, disengaged: 10 },
+      top_event: "looked_away (3 times)",
+      ai_note:
+        "The class re-engaged here. If this section involved a demo, worked example, or change of pace, that's likely what brought them back. Try to bring that energy earlier next time.",
     },
     {
-      title: "Your improvement trajectory",
-      body: "You recovered from your danger zone (minutes 12–18) and finished the session strong with 80%+ engagement in the final 10 minutes. This shows resilience — you're able to re-engage after dips, which is a skill that improves with practice.",
-      category: "encouragement",
+      label: "Wrap-up",
+      start: 1500,
+      end: 1800,
+      engagement_pct: 80.1,
+      state_breakdown: { engaged: 72, passive: 22, disengaged: 6 },
+      top_event: null as string | null,
+      ai_note:
+        "Solid finish. Students were mostly attentive through the closing. Ending strong helps with retention of the final points.",
     },
   ],
-  generated_at: "2026-03-28T14:35:00Z",
 };
 
 export const mockSessionList = [
