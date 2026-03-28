@@ -16,6 +16,7 @@ PARTIAL_EMIT_INTERVAL = 2.0  # seconds between partial live-mode emissions
 EVENT_YAWN = "yawn"
 EVENT_EYES_CLOSED = "eyes_closed"
 EVENT_LOOKED_AWAY = "looked_away"
+EVENT_LOOKED_DOWN = "looked_down"
 EVENT_ZONED_OUT = "zoned_out"
 EVENT_FACE_LOST = "face_lost"
 
@@ -31,16 +32,18 @@ class Event:
 
 def _classify_event_type(features: FeatureVector, config_thresholds: dict) -> str:
     """Pick the most prominent distraction signal from the feature vector."""
-    mar_yawn = config_thresholds.get("mar_yawn", 0.6)
-    ear_open = config_thresholds.get("ear_open", 0.2)
-    gaze_passive = config_thresholds.get("gaze_passive", 0.5)
+    mar_yawn = config_thresholds.get("mar_yawn", 0.7)
+    ear_open = config_thresholds.get("ear_open", 0.15)
+    gaze_passive = config_thresholds.get("gaze_passive", 0.35)
+    head_pitch_disengaged = config_thresholds.get("head_pitch_disengaged", 20.0)
 
     if features.mar > mar_yawn:
         return EVENT_YAWN
     if features.ear_avg < ear_open:
         return EVENT_EYES_CLOSED
+    if abs(features.head_pitch) > head_pitch_disengaged:
+        return EVENT_LOOKED_DOWN
     if features.gaze_score < gaze_passive:
-        direction = "left" if features.gaze_horizontal < 0 else "right"
         return EVENT_LOOKED_AWAY
     return EVENT_ZONED_OUT
 
@@ -82,6 +85,11 @@ class EventLogger:
                 metadata["direction"] = (
                     "left" if result.features.gaze_horizontal < 0 else "right"
                 )
+            elif event_type == EVENT_LOOKED_DOWN:
+                metadata["direction"] = (
+                    "down" if result.features.head_pitch < 0 else "up"
+                )
+                metadata["pitch"] = round(result.features.head_pitch, 1)
             return self._handle_distraction(
                 result.timestamp,
                 event_type,
