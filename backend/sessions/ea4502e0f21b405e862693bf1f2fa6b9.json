@@ -1,0 +1,75 @@
+{
+  "session_id": "ea4502e0f21b405e862693bf1f2fa6b9",
+  "created_at": "2026-03-28T20:30:43.615973+00:00",
+  "status": "done",
+  "video_filename": "0328.mp4",
+  "duration": 26.43,
+  "analytics": {
+    "focus_time_pct": 67.0,
+    "distraction_time_pct": 33.0,
+    "longest_focus_streak": 10.5,
+    "distraction_breakdown": {
+      "face_lost": 2,
+      "eyes_closed": 1
+    },
+    "engagement_curve": [
+      0.67
+    ],
+    "danger_zones": []
+  },
+  "events": [
+    {
+      "timestamp": 0.0,
+      "event_type": "face_lost",
+      "duration": 2.7,
+      "confidence": 0.95,
+      "metadata": {}
+    },
+    {
+      "timestamp": 5.2,
+      "event_type": "face_lost",
+      "duration": 1.3,
+      "confidence": 0.95,
+      "metadata": {}
+    },
+    {
+      "timestamp": 17.0,
+      "event_type": "eyes_closed",
+      "duration": 4.7,
+      "confidence": 0.8,
+      "metadata": {}
+    }
+  ],
+  "engagement_states": [
+    {
+      "start": 0.0,
+      "end": 2.7,
+      "state": "disengaged"
+    },
+    {
+      "start": 2.7,
+      "end": 5.2,
+      "state": "engaged"
+    },
+    {
+      "start": 5.2,
+      "end": 6.5,
+      "state": "disengaged"
+    },
+    {
+      "start": 6.5,
+      "end": 17.0,
+      "state": "engaged"
+    },
+    {
+      "start": 17.0,
+      "end": 21.7,
+      "state": "disengaged"
+    },
+    {
+      "start": 21.7,
+      "end": 26.4,
+      "state": "engaged"
+    }
+  ]
+}
