@@ -17,22 +17,26 @@ class ClassifierConfig:
     """All thresholds used by the engagement classifier."""
 
     # EAR thresholds
-    ear_open: float = 0.2           # above = eyes open
+    # Real data: open ~0.35-0.53, closed ~0.03-0.10
+    ear_open: float = 0.15          # above = eyes open
     eye_closed_duration: float = 0.5  # seconds of EAR < ear_open → disengaged
 
-    # MAR thresholds
-    mar_yawn: float = 0.6           # above = yawning
+    # MAR thresholds (using jawOpen blendshape: 0.0-1.0)
+    # Real data: closed 0.00-0.10, talking 0.3-0.5, yawn 0.7+
+    mar_yawn: float = 0.7           # above = yawning
     yawn_duration: float = 2.0      # seconds of MAR > mar_yawn → disengaged
 
     # Gaze thresholds
-    gaze_on_screen: float = 0.7     # above = looking at screen
-    gaze_passive: float = 0.5       # above this but below on_screen = drifting
-    gaze_away_duration: float = 5.0  # seconds of gaze < gaze_passive → disengaged
+    # Real data: on-screen ~0.7-0.9, drifting ~0.5-0.7, away ~0.1-0.3
+    gaze_on_screen: float = 0.6     # above = looking at screen
+    gaze_passive: float = 0.35      # above this but below on_screen = drifting
+    gaze_away_duration: float = 3.0  # seconds of gaze < gaze_passive → disengaged
 
     # Head pose thresholds (degrees, absolute values)
-    head_yaw_engaged: float = 15.0   # below = facing forward
-    head_yaw_passive: float = 30.0   # between engaged and this = passive; above = disengaged
-    head_pitch_engaged: float = 10.0  # below = head level
+    # Real data: webcam yaw is small (-7 to +7 for normal), pitch -18 to +17
+    head_yaw_engaged: float = 8.0    # below = facing forward
+    head_yaw_passive: float = 15.0   # between engaged and this = passive; above = disengaged
+    head_pitch_engaged: float = 15.0  # below = head level
 
     # Expression variance
     expression_var_threshold: float = 0.02  # below = frozen face
