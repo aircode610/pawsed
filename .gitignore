@@ -43,3 +43,6 @@ data/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Sessions
+backend/sessions/
