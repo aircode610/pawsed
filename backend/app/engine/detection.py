@@ -60,9 +60,9 @@ class DetectionEngine:
         num_faces: int = 10,
         tile_grid: tuple[int, int] = (3, 3),
         tile_overlap: int = 20,
-        min_detection_confidence: float = 0.3,
-        min_presence_confidence: float = 0.3,
-        min_tracking_confidence: float = 0.3,
+        min_detection_confidence: float = 0.5,
+        min_presence_confidence: float = 0.5,
+        min_tracking_confidence: float = 0.5,
     ):
         """
         Args:
@@ -112,15 +112,16 @@ class DetectionEngine:
         )
         self._detector = vision.FaceLandmarker.create_from_options(options)
 
-        # Tile detector (always IMAGE mode — no timestamp dependency)
+        # Tile detector (always IMAGE mode, lower confidence for small faces in tiles)
+        tile_conf = min(0.3, min_detection_confidence)
         tile_options = vision.FaceLandmarkerOptions(
             base_options=mp.tasks.BaseOptions(model_asset_path=resolved_path),
             running_mode=vision.RunningMode.IMAGE,
             output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
             num_faces=self._num_faces_per_tile,
-            min_face_detection_confidence=min_detection_confidence,
-            min_face_presence_confidence=min_presence_confidence,
+            min_face_detection_confidence=tile_conf,
+            min_face_presence_confidence=tile_conf,
         )
         self._tile_detector = vision.FaceLandmarker.create_from_options(tile_options)
 
@@ -132,22 +133,20 @@ class DetectionEngine:
     def detect_multi(self, frame_bgr: np.ndarray, timestamp_ms: int = 0) -> list[FaceData]:
         """Detect all faces, using tiled detection for small-face scenarios.
 
-        First tries full-frame detection. If it finds fewer faces than expected
-        for the grid, falls back to tiled detection.
+        First tries full-frame detection. If it finds any faces, returns those
+        (avoids false positives from tiled detection on single-person videos).
+        Only falls back to tiled detection when full-frame finds nothing,
+        which indicates faces are too small for the full-frame detector.
         """
         # Try full-frame first
         full_faces = self._detect_full(frame_bgr, timestamp_ms)
 
-        # If we got a reasonable number, return immediately
-        expected_min = self._tile_grid[0] * self._tile_grid[1] // 2
-        if len(full_faces) >= expected_min:
+        if len(full_faces) > 0:
             return full_faces
 
-        # Fall back to tiled detection for small faces
-        tiled_faces = self._detect_tiled(frame_bgr)
-
-        # Return whichever found more
-        return tiled_faces if len(tiled_faces) > len(full_faces) else full_faces
+        # Full-frame found nothing — faces are likely too small (video-call grid).
+        # Fall back to tiled detection.
+        return self._detect_tiled(frame_bgr)
 
     def _detect_full(self, frame_bgr: np.ndarray, timestamp_ms: int = 0) -> list[FaceData]:
         """Standard full-frame detection."""
