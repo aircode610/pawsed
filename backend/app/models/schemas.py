@@ -127,13 +127,20 @@ class FrameResult:
 
     @property
     def state(self) -> EngagementState:
-        """Return the worst state among all faces (backward compat)."""
+        """Return the majority engagement state across all faces.
+
+        Uses the classroom-level disengaged_pct to determine the overall state,
+        so 1 person disengaged out of 10 doesn't tank the whole frame.
+        """
         if not self.faces:
             return EngagementState.DISENGAGED
-        states = [f.state for f in self.faces]
-        if EngagementState.DISENGAGED in states:
+        # >50% disengaged = frame is disengaged
+        if self.disengaged_pct > 50:
             return EngagementState.DISENGAGED
-        if EngagementState.PASSIVE in states:
+        # >50% passive+disengaged = frame is passive
+        passive_count = sum(1 for f in self.faces if f.state == EngagementState.PASSIVE)
+        passive_pct = ((passive_count + self.disengaged_count) / self.total_faces * 100) if self.total_faces > 0 else 0
+        if passive_pct > 50:
             return EngagementState.PASSIVE
         return EngagementState.ENGAGED
 

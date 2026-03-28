@@ -83,12 +83,19 @@ def save_session_results(
         breakdown[e.event_type] = breakdown.get(e.event_type, 0) + 1
 
     # Engagement curve: average engagement score per 60-second bin
+    # For multi-face: use per-frame engaged percentage (not binary state)
     bin_size = 60.0
     num_bins = max(1, int(total / bin_size) + 1)
     bins: list[list[float]] = [[] for _ in range(num_bins)]
     for r in results:
         idx = min(int(r.timestamp / bin_size), num_bins - 1)
-        score = 1.0 if r.state.value == "engaged" else (0.5 if r.state.value == "passive" else 0.0)
+        if r.total_faces > 0:
+            # Score based on actual per-face breakdown
+            engaged_count = sum(1 for f in r.faces if f.state.value == "engaged")
+            passive_count = sum(1 for f in r.faces if f.state.value == "passive")
+            score = (engaged_count + passive_count * 0.5) / r.total_faces
+        else:
+            score = 0.0
         bins[idx].append(score)
     engagement_curve = [
         round(sum(b) / len(b), 2) if b else 0.0 for b in bins
