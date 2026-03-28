@@ -13,9 +13,9 @@
 | Timeline event logger | Backend L4 | | DONE |
 | `/analyze` POST endpoint | Backend L7 | | DONE |
 | `/session/{id}` GET endpoint | Backend L7 | | DONE |
-| Upload / Capture page | Frontend P1 | | TODO |
-| Session Timeline page | Frontend P3 | | TODO |
-| Analytics Dashboard page | Frontend P4 | | TODO |
+| Upload / Capture page | Frontend P1 | | DONE |
+| Session Timeline page | Frontend P3 | | DONE |
+| Analytics Dashboard page | Frontend P4 | | DONE |
 
 ### P1 — Should Have (Day 2 AM)
 **Goal:** Live demo with webcam + polished output.
@@ -23,9 +23,9 @@
 | Task | Layer/Page | Owner | Status |
 |------|-----------|-------|--------|
 | Session analytics engine | Backend L5 | | TODO |
-| `/ws/live` WebSocket endpoint | Backend L7 | | TODO |
-| Live Engagement Overlay page | Frontend P2 | | TODO |
-| Personal Focus Report page | Frontend P5 | | TODO |
+| `/ws/live` WebSocket endpoint | Backend L7 | | DONE |
+| Live Engagement Overlay page | Frontend P2 | | DONE |
+| Personal Focus Report page | Frontend P5 | | DONE |
 
 ### P2 — Nice to Have (Day 2 PM)
 **Goal:** AI coach + gamification = winning demo.
@@ -34,8 +34,8 @@
 |------|-----------|-------|--------|
 | Claude API recommendation layer | Backend L6 | | TODO |
 | `/session/{id}/insights` GET endpoint | Backend L7 | | TODO |
-| AI Coach Suggestions page | Frontend P6 | | TODO |
-| Session History + Compare page | Frontend P7 | | TODO |
+| AI Coach Suggestions page | Frontend P6 | | DONE |
+| Session History + Compare page | Frontend P7 | | DONE |
 | Focus Streak + Gamification page | Frontend P8 | | TODO |
 
 ## Work Split Suggestion
