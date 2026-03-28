@@ -57,11 +57,13 @@ class BlendshapeScores:
 
 @dataclass
 class FaceData:
-    """Raw output from MediaPipe FaceLandmarker for one frame."""
+    """Raw output from MediaPipe Face Mesh for one frame."""
 
-    landmarks: list[Landmark]  # 478 landmarks
-    blendshapes: BlendshapeScores
-    transformation_matrix: np.ndarray  # 4x4 matrix
+    landmarks: list[Landmark]        # 478 landmarks (468-477 = iris, requires refine_landmarks=True)
+    raw_mp_landmarks: object         # raw MediaPipe face_landmarks object (needed for solvePnP + iris gaze)
+    frame_shape: tuple               # (h, w, c) — needed for coordinate scaling
+    blendshapes: BlendshapeScores | None = None        # only available with FaceLandmarker (not Face Mesh)
+    transformation_matrix: np.ndarray | None = None    # only available with FaceLandmarker (not Face Mesh)
 
 
 @dataclass
@@ -79,7 +81,8 @@ class FeatureVector:
     head_yaw: float          # degrees — positive = looking right
     head_roll: float         # degrees — positive = tilting right
     expression_variance: float  # std dev of blendshapes over window
-    timestamp: float = 0.0  # seconds from session start
+    timestamp: float = 0.0   # seconds from session start
+    face_crop: np.ndarray | None = None  # 250×250 grayscale crop for ParaNet CNN
 
 
 @dataclass

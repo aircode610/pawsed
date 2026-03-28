@@ -6,11 +6,9 @@ import DetectionEngine and replace the TODO stub below.
 
 from app.analytics.events import Event, EventLogger
 from app.engine.classifier import ClassifierConfig, EngagementClassifier
+from app.engine.detection import DetectionEngine
 from app.engine.features import FeatureExtractor
 from app.models.schemas import EngagementState, FrameResult
-
-# TODO: once detection.py is ready, uncomment this import:
-# from app.engine.detection import DetectionEngine
 
 
 class Pipeline:
@@ -35,8 +33,7 @@ class Pipeline:
                 "gaze_passive": (config or ClassifierConfig()).gaze_passive,
             }
         )
-        # TODO: init detection engine when available
-        # self.detector = DetectionEngine()
+        self.detector = DetectionEngine()
 
     def process_video(self, video_path: str) -> tuple[list[FrameResult], list[Event], float]:
         """Process a video file end-to-end.
@@ -97,9 +94,7 @@ class Pipeline:
     def _process_frame_bgr(self, frame_bgr, timestamp: float) -> FrameResult:
         """Internal: run L1 → L2 → L3 on one frame."""
         # --- L1: Detection ---
-        # TODO: replace stub with real detection once detection.py is ready
-        # face_data = self.detector.detect(frame_bgr, timestamp)
-        face_data = _stub_detect(frame_bgr, timestamp)
+        face_data = self.detector.detect(frame_bgr, timestamp)
 
         if face_data is None:
             # No face in frame
@@ -118,8 +113,8 @@ class Pipeline:
                 face_detected=False,
             )
 
-        # --- L2: Feature extraction ---
-        features = self.feature_extractor.extract(face_data, timestamp)
+        # --- L2: Feature extraction (pass frame for face crop → ParaNet) ---
+        features = self.feature_extractor.extract(face_data, timestamp, frame_bgr=frame_bgr)
 
         # --- L3: Classification ---
         state, _confidence = self.classifier.classify(features)
@@ -138,10 +133,3 @@ class Pipeline:
         self.event_logger.reset()
 
 
-def _stub_detect(frame_bgr, timestamp: float):
-    """Temporary stub — returns None (no face) until detection.py is ready.
-
-    Replace this entire function with a real DetectionEngine call.
-    """
-    # TODO: remove stub once detection.py is implemented
-    return None
