@@ -1,7 +1,7 @@
-# EngageSense - Project Instructions
+# Pawsed - Project Instructions
 
 ## Project Overview
-EngageSense is a student engagement detection and analytics platform. It uses MediaPipe's 478 landmarks + 52 blendshapes to detect attention levels from video, then provides personalized recommendations via Claude API.
+Pawsed (paused + paws — for when attention pauses) is a student engagement detection and analytics platform. It uses MediaPipe's 478 landmarks + 52 blendshapes to detect attention levels from video, then provides personalized recommendations via Claude API.
 
 **Stack:** Python + FastAPI (backend) | React via Lovable (frontend) | MediaPipe + OpenCV | Claude API
 

@@ -1,8 +1,8 @@
-# EngageSense
+# Pawsed
 
-**AI-powered student engagement detection and analytics platform.**
+**AI-powered student engagement detection and analytics platform.** *Paused + Paws — for when attention pauses.*
 
-EngageSense analyzes video of students during lectures to detect engagement levels in real-time, generates a color-coded timeline of attention events, and provides personalized study recommendations powered by Claude AI.
+Pawsed analyzes video of students during lectures to detect engagement levels in real-time, generates a color-coded timeline of attention events, and provides personalized study recommendations powered by Claude AI.
 
 ## What It Does
 
@@ -87,7 +87,7 @@ pawsed/
 - [attention-monitor](https://github.com/yptheangel/attention-monitor) — Face landmark tracking with dlib + PyQtGraph
 - [Student-Attentiveness-System](https://github.com/anupampatil44/Student-Attentiveness-System) — Expression + head pose detection with MTCNN
 
-EngageSense goes beyond both with MediaPipe's superior model, a polished web frontend, session analytics, and AI-powered recommendations.
+Pawsed goes beyond both with MediaPipe's superior model, a polished web frontend, session analytics, and AI-powered recommendations.
 
 ## Team
 
