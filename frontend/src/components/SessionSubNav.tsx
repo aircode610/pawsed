@@ -5,7 +5,7 @@ const tabs = [
   { label: "Timeline", path: "timeline", icon: Clock },
   { label: "Analytics", path: "analytics", icon: BarChart3 },
   { label: "Report", path: "report", icon: FileText },
-  { label: "AI Coach", path: "insights", icon: Brain },
+  { label: "Insights", path: "insights", icon: Brain },
 ];
 
 export function SessionSubNav() {

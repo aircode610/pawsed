@@ -32,7 +32,8 @@ Feed these prompts to Lovable **one at a time**, in order. Each step builds on t
 | 5 | [05-api-client.md](./05-api-client.md) | TypeScript API client + wire up to real backend | P0 |
 | 6 | [06-live-overlay.md](./06-live-overlay.md) | Live webcam session with engagement overlay | P1 |
 | 7 | [07-focus-report.md](./07-focus-report.md) | Personal Focus Report ("Spotify Wrapped" style) | P1 |
-| 8 | [08-ai-coach.md](./08-ai-coach.md) | AI Coach Suggestions page | P2 |
+| 8 | [08-ai-insights.md](./08-ai-insights.md) | Lecture Section Scoring (for lecturers) | P2 |
+| 8b | [08b-teaching-coach-chat.md](./08b-teaching-coach-chat.md) | Conversational Teaching Coach chat | P2 |
 | 9 | [09-history-and-gamification.md](./09-history-and-gamification.md) | Session History + Gamification | P2 |
 
 ## Tips for Working with Lovable
