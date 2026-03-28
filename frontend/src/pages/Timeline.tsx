@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { Play, Eye, Moon, CircleDot, ArrowLeft, ArrowRight, AlertCircle } from "lucide-react";
+import { Play, Eye, Moon, CircleDot, ArrowLeft, ArrowRight, AlertCircle, Scan } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -53,9 +54,12 @@ const TimelinePage = () => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoError, setVideoError] = useState(false);
+  const [showLandmarks, setShowLandmarks] = useState(false);
   const { duration, analytics, events, engagement_states } = session;
 
-  const videoUrl = id ? `${API_BASE}/session/${id}/video` : "";
+  const videoUrl = id
+    ? `${API_BASE}/session/${id}/video${showLandmarks ? "?landmarks=true" : ""}`
+    : "";
 
   // Sync video playback position → currentTime state using rAF for smooth updates
   useEffect(() => {
@@ -148,9 +152,16 @@ const TimelinePage = () => {
           {!videoError && videoUrl ? (
             <video
               ref={videoRef}
+              key={videoUrl}
               src={videoUrl}
               className="w-full h-full object-contain bg-black"
               controls
+              onLoadedMetadata={() => {
+                // Restore playback position after source switch
+                if (videoRef.current && currentTime > 0) {
+                  videoRef.current.currentTime = currentTime;
+                }
+              }}
               onError={() => setVideoError(true)}
             />
           ) : (
@@ -162,6 +173,18 @@ const TimelinePage = () => {
                 </p>
               </div>
             </div>
+          )}
+          {/* Landmarks toggle */}
+          {!videoError && videoUrl && (
+            <Button
+              variant={showLandmarks ? "default" : "secondary"}
+              size="sm"
+              className="absolute top-2 right-2 z-10 gap-1.5 opacity-90 hover:opacity-100"
+              onClick={() => setShowLandmarks((v) => !v)}
+            >
+              <Scan className="h-3.5 w-3.5" />
+              {showLandmarks ? "Landmarks On" : "Landmarks Off"}
+            </Button>
           )}
         </div>
         {/* Scrub bar (always visible — syncs with video when available) */}

@@ -31,8 +31,8 @@ def _passive_features(timestamp: float = 0.0) -> FeatureVector:
     return FeatureVector(
         ear_left=0.25, ear_right=0.25, ear_avg=0.25,
         mar=0.12,
-        gaze_score=0.60, gaze_horizontal=-0.2, gaze_vertical=-0.1,
-        head_pitch=12.0, head_yaw=20.0, head_roll=3.0,
+        gaze_score=0.45, gaze_horizontal=-0.2, gaze_vertical=-0.1,
+        head_pitch=16.0, head_yaw=10.0, head_roll=3.0,
         expression_variance=0.01,
         timestamp=timestamp,
     )
@@ -75,7 +75,7 @@ def _disengaged_looking_away(timestamp: float = 0.0) -> FeatureVector:
 
 
 def _disengaged_head_turned(timestamp: float = 0.0) -> FeatureVector:
-    """Disengaged via head turned far away (yaw > 30°)."""
+    """Disengaged via head turned far away (yaw > 15°)."""
     return FeatureVector(
         ear_left=0.25, ear_right=0.25, ear_avg=0.25,
         mar=0.10,
@@ -152,18 +152,18 @@ class TestTemporalTracking:
         assert state == EngagementState.DISENGAGED
 
     def test_brief_gaze_away_not_disengaged(self):
-        """Gaze away for < 5s should NOT trigger disengaged."""
+        """Gaze away for < 3s should NOT trigger disengaged."""
         clf = EngagementClassifier()
         clf.classify(_disengaged_looking_away(0.0))
-        state, _ = clf.classify(_disengaged_looking_away(3.0))
+        state, _ = clf.classify(_disengaged_looking_away(2.0))
         assert state != EngagementState.DISENGAGED
 
     def test_sustained_gaze_away_disengaged(self):
-        """Gaze away for >= 5s should trigger disengaged."""
+        """Gaze away for >= 3s should trigger disengaged."""
         clf = EngagementClassifier()
         clf.classify(_disengaged_looking_away(0.0))
-        clf.classify(_disengaged_looking_away(3.0))
-        state, _ = clf.classify(_disengaged_looking_away(5.5))
+        clf.classify(_disengaged_looking_away(2.0))
+        state, _ = clf.classify(_disengaged_looking_away(3.5))
         assert state == EngagementState.DISENGAGED
 
     def test_eye_closure_resets_on_open(self):
@@ -296,7 +296,7 @@ class TestEdgeCases:
         clf = EngagementClassifier()
         features = _engaged_features(0.0)
         # Only make gaze slightly drifting
-        features.gaze_score = 0.65  # between 0.5 and 0.7 = drifting
+        features.gaze_score = 0.50  # between 0.35 and 0.6 = drifting
         state, _ = clf.classify(features)
         assert state == EngagementState.ENGAGED
 
@@ -304,7 +304,7 @@ class TestEdgeCases:
         """Two passive signals should classify as passive."""
         clf = EngagementClassifier()
         features = _engaged_features(0.0)
-        features.gaze_score = 0.60  # drifting
+        features.gaze_score = 0.50  # drifting (between 0.35 and 0.6)
         features.expression_variance = 0.01  # frozen face
         state, _ = clf.classify(features)
         assert state == EngagementState.PASSIVE
@@ -317,10 +317,10 @@ class TestEdgeCases:
 class TestConfigurability:
     def test_custom_ear_threshold(self):
         """Lowering EAR threshold means more tolerance for squinting."""
-        config = ClassifierConfig(ear_open=0.15)
+        config = ClassifierConfig(ear_open=0.08)
         clf = EngagementClassifier(config=config)
         features = _engaged_features(0.0)
-        features.ear_avg = 0.16  # below default 0.2 but above custom 0.15
+        features.ear_avg = 0.10  # below default 0.15 but above custom 0.08
         state, _ = clf.classify(features)
         assert state == EngagementState.ENGAGED
 
@@ -343,10 +343,10 @@ class TestConfigurability:
 
     def test_custom_head_yaw_thresholds(self):
         """Wider head yaw tolerance keeps student engaged."""
-        config = ClassifierConfig(head_yaw_engaged=25.0, head_yaw_passive=45.0)
+        config = ClassifierConfig(head_yaw_engaged=12.0, head_yaw_passive=25.0)
         clf = EngagementClassifier(config=config)
         features = _engaged_features(0.0)
-        features.head_yaw = 20.0  # above default 15 but below custom 25
+        features.head_yaw = 10.0  # above default 8 but below custom 12
         state, _ = clf.classify(features)
         assert state == EngagementState.ENGAGED
 
