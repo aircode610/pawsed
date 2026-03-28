@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { Play, Eye, Moon, CircleDot, ArrowLeft, ArrowRight, AlertCircle } from "lucide-react";
+import { Play, Eye, Moon, CircleDot, ArrowLeft, ArrowRight, ArrowDown, AlertCircle, Scan } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -33,6 +34,8 @@ function EventIcon({ type, direction }: { type: EventType; direction?: string })
       return <CircleDot className={cls} />;
     case "looked_away":
       return direction === "right" ? <ArrowRight className={cls} /> : <ArrowLeft className={cls} />;
+    case "looked_down":
+      return <ArrowDown className={cls} />;
     case "zoned_out":
       return <Moon className={cls} />;
     default:
@@ -44,20 +47,54 @@ function eventLabel(type: string): string {
   return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 const TimelinePage = () => {
   const { id } = useParams();
   const { data: session, isLoading, isUsingMock } = useSessionData(id);
   const [currentTime, setCurrentTime] = useState(0);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoError, setVideoError] = useState(false);
+  const [showLandmarks, setShowLandmarks] = useState(false);
   const { duration, analytics, events, engagement_states } = session;
+
+  const videoUrl = id
+    ? `${API_BASE}/session/${id}/video${showLandmarks ? "?landmarks=true" : ""}`
+    : "";
+
+  // Sync video playback position → currentTime state using rAF for smooth updates
+  useEffect(() => {
+    let rafId: number;
+    const tick = () => {
+      const video = videoRef.current;
+      if (video && !video.paused && !video.ended) {
+        setCurrentTime(video.currentTime);
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  const seekTo = useCallback(
+    (time: number) => {
+      const clamped = Math.max(0, Math.min(duration, time));
+      setCurrentTime(clamped);
+      if (videoRef.current) {
+        videoRef.current.currentTime = clamped;
+      }
+    },
+    [duration]
+  );
 
   const handleTimelineClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
       const pct = (e.clientX - rect.left) / rect.width;
-      setCurrentTime(Math.max(0, Math.min(duration, pct * duration)));
+      seekTo(pct * duration);
     },
-    [duration]
+    [duration, seekTo]
   );
 
   const activeEventIdx = events.reduce((closest, ev, idx) => {
@@ -111,15 +148,48 @@ const TimelinePage = () => {
         </Card>
       </div>
 
-      {/* Video Player Placeholder */}
+      {/* Video Player */}
       <Card className="bg-card border-border overflow-hidden">
-        <div className="relative aspect-video bg-background flex items-center justify-center">
-          <div className="text-center text-muted-foreground">
-            <Play className="h-12 w-12 mx-auto mb-2 opacity-40" />
-            <p className="text-sm">Video playback — connect to upload</p>
-          </div>
+        <div className="relative aspect-video bg-background">
+          {!videoError && videoUrl ? (
+            <video
+              ref={videoRef}
+              key={videoUrl}
+              src={videoUrl}
+              className="w-full h-full object-contain bg-black"
+              controls
+              onLoadedMetadata={() => {
+                // Restore playback position after source switch
+                if (videoRef.current && currentTime > 0) {
+                  videoRef.current.currentTime = currentTime;
+                }
+              }}
+              onError={() => setVideoError(true)}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="text-center text-muted-foreground">
+                <Play className="h-12 w-12 mx-auto mb-2 opacity-40" />
+                <p className="text-sm">
+                  {isUsingMock ? "Video not available in demo mode" : "Video not available"}
+                </p>
+              </div>
+            </div>
+          )}
+          {/* Landmarks toggle */}
+          {!videoError && videoUrl && (
+            <Button
+              variant={showLandmarks ? "default" : "secondary"}
+              size="sm"
+              className="absolute top-2 right-2 z-10 gap-1.5 opacity-90 hover:opacity-100"
+              onClick={() => setShowLandmarks((v) => !v)}
+            >
+              <Scan className="h-3.5 w-3.5" />
+              {showLandmarks ? "Landmarks On" : "Landmarks Off"}
+            </Button>
+          )}
         </div>
-        {/* Scrub bar */}
+        {/* Scrub bar (always visible — syncs with video when available) */}
         <div className="px-4 py-2 flex items-center gap-3">
           <span className="text-xs text-muted-foreground font-mono w-12">
             {formatTime(currentTime)}
@@ -228,7 +298,7 @@ const TimelinePage = () => {
             return (
               <button
                 key={i}
-                onClick={() => setCurrentTime(ev.timestamp)}
+                onClick={() => seekTo(ev.timestamp)}
                 className={`w-full flex items-center gap-4 px-4 py-2.5 text-left text-sm transition-colors hover:bg-accent/50 ${
                   isActive ? "bg-primary/10" : i % 2 === 0 ? "bg-transparent" : "bg-accent/20"
                 }`}

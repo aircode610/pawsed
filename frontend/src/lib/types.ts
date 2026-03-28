@@ -43,8 +43,39 @@ export interface SessionSummary {
   duration: number;
   video_filename: string;
   focus_time_pct: number;
+  event_count: number;
+  status: string;
 }
 
+export interface StateBreakdown {
+  engaged: number;
+  passive: number;
+  disengaged: number;
+}
+
+export interface LectureSection {
+  label: string;
+  start: number;
+  end: number;
+  engagement_pct: number;
+  state_breakdown: StateBreakdown;
+  top_event: string | null;
+  events_in_section: SessionEvent[];
+  ai_note: string;
+}
+
+export interface SectionScoringData {
+  session_id: string;
+  overall_summary: string;
+  sections: LectureSection[];
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+// Legacy compat — kept for any code still referencing InsightData
 export interface InsightData {
   session_id: string;
   recommendations: string[];

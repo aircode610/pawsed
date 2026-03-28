@@ -1,9 +1,14 @@
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Sparkles, AlertTriangle, Eye, ChevronRight } from "lucide-react";
+import { Sparkles, AlertTriangle, Eye, ChevronRight, AlertCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SessionSubNav } from "@/components/SessionSubNav";
 import { TeachingCoachChat } from "@/components/TeachingCoachChat";
-import { mockSectionScoring, mockSession } from "@/lib/mock-data";
+import { useSessionData } from "@/hooks/use-session-data";
+import { getSectionScoring } from "@/lib/api";
+import { mockSectionScoring } from "@/lib/mock-data";
+import type { SectionScoringData } from "@/lib/types";
 
 const fmt = (s: number) => {
   const m = Math.floor(s / 60);
@@ -20,12 +25,48 @@ const scoreColor = (pct: number) => {
 const AICoachPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { sections, overall_summary } = mockSectionScoring;
-  const dangerCount = mockSession.analytics.danger_zones.length;
+  const { data: session, isUsingMock: sessionMock } = useSessionData(id);
+  const [scoring, setScoring] = useState<SectionScoringData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUsingMock, setIsUsingMock] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    getSectionScoring(id)
+      .then((data) => {
+        setScoring(data);
+        setIsUsingMock(false);
+      })
+      .catch(() => {
+        setScoring(mockSectionScoring as any);
+        setIsUsingMock(true);
+      })
+      .finally(() => setIsLoading(false));
+  }, [id]);
+
+  if (isLoading || !scoring) {
+    return (
+      <div className="space-y-4">
+        <SessionSubNav />
+        <Skeleton className="h-32 rounded-lg" />
+        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 rounded-lg" />)}
+      </div>
+    );
+  }
+
+  const { sections, overall_summary } = scoring;
+  const dangerCount = session.analytics.danger_zones.length;
 
   return (
     <div className="space-y-4">
       <SessionSubNav />
+
+      {(isUsingMock || sessionMock) && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          {isUsingMock ? "Using demo insights — AI analysis unavailable" : "Using demo data — backend not connected"}
+        </div>
+      )}
 
       {/* Overall Summary */}
       <Card className="bg-card border-border border-l-[3px] border-l-primary p-6 space-y-3">
@@ -36,7 +77,7 @@ const AICoachPage = () => {
         <p className="text-sm text-muted-foreground leading-relaxed">{overall_summary}</p>
         <div className="flex gap-6 pt-1 text-sm">
           <span className="text-muted-foreground">
-            Overall: <span className="font-semibold text-foreground">{mockSession.analytics.focus_time_pct}%</span> engaged
+            Overall: <span className="font-semibold text-foreground">{session.analytics.focus_time_pct}%</span> engaged
           </span>
           <span className="text-muted-foreground">
             Danger zones: <span className="font-semibold text-foreground">{dangerCount}</span>
@@ -91,7 +132,7 @@ const AICoachPage = () => {
               {/* Top event */}
               {sec.top_event && (
                 <div className="flex items-center gap-1.5">
-                  {sec.top_event.includes("looked_away") ? (
+                  {sec.top_event.includes("looked") ? (
                     <Eye className="h-3.5 w-3.5 text-muted-foreground" />
                   ) : (
                     <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
@@ -114,7 +155,7 @@ const AICoachPage = () => {
       </p>
 
       {/* Teaching Coach Chat */}
-      <TeachingCoachChat />
+      <TeachingCoachChat sessionId={id} />
     </div>
   );
 };

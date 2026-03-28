@@ -1,16 +1,10 @@
-"""Pipeline orchestrator — wires L1 → L2 → L3 for each video frame.
-
-Detection (L1) is plugged in here. When your teammate finishes detection.py,
-import DetectionEngine and replace the TODO stub below.
-"""
+"""Pipeline orchestrator — wires L1 → L2 → L3 for each video frame."""
 
 from app.analytics.events import Event, EventLogger
 from app.engine.classifier import ClassifierConfig, EngagementClassifier
+from app.engine.detection import DetectionEngine
 from app.engine.features import FeatureExtractor
-from app.models.schemas import EngagementState, FrameResult
-
-# TODO: once detection.py is ready, uncomment this import:
-# from app.engine.detection import DetectionEngine
+from app.models.schemas import EngagementState, FeatureVector, FrameResult
 
 
 class Pipeline:
@@ -25,18 +19,33 @@ class Pipeline:
         result = pipeline.process_frame(frame_bgr, timestamp)
     """
 
-    def __init__(self, config: ClassifierConfig | None = None):
+    def __init__(
+        self,
+        config: ClassifierConfig | None = None,
+        model_path: str | None = None,
+    ):
         self.feature_extractor = FeatureExtractor()
         self.classifier = EngagementClassifier(config)
+        cfg = config or ClassifierConfig()
         self.event_logger = EventLogger(
             thresholds={
-                "mar_yawn": (config or ClassifierConfig()).mar_yawn,
-                "ear_open": (config or ClassifierConfig()).ear_open,
-                "gaze_passive": (config or ClassifierConfig()).gaze_passive,
+                "mar_yawn": cfg.mar_yawn,
+                "ear_open": cfg.ear_open,
+                "gaze_passive": cfg.gaze_passive,
+                "head_pitch_disengaged": cfg.head_pitch_disengaged,
             }
         )
-        # TODO: init detection engine when available
-        # self.detector = DetectionEngine()
+        self._model_path = model_path
+        self._detector: DetectionEngine | None = None
+
+    def _get_detector(self, running_mode: str = "VIDEO") -> DetectionEngine:
+        """Lazy-init the detection engine (avoids loading model until needed)."""
+        if self._detector is None:
+            self._detector = DetectionEngine(
+                model_path=self._model_path,
+                running_mode=running_mode,
+            )
+        return self._detector
 
     def process_video(self, video_path: str) -> tuple[list[FrameResult], list[Event], float]:
         """Process a video file end-to-end.
@@ -61,6 +70,8 @@ class Pipeline:
         # Sample every Nth frame to hit target processing FPS
         sample_every = max(1, int(fps / settings.processing_fps))
 
+        detector = self._get_detector(running_mode="VIDEO")
+
         results: list[FrameResult] = []
         frame_idx = 0
 
@@ -71,7 +82,8 @@ class Pipeline:
 
             if frame_idx % sample_every == 0:
                 timestamp = frame_idx / fps
-                result = self._process_frame_bgr(frame_bgr, timestamp)
+                timestamp_ms = int(timestamp * 1000)
+                result = self._process_frame_bgr(frame_bgr, timestamp, timestamp_ms, detector)
                 results.append(result)
                 self.event_logger.process(result)
 
@@ -90,20 +102,24 @@ class Pipeline:
 
         Returns the FrameResult and an Event if one just completed.
         """
-        result = self._process_frame_bgr(frame_bgr, timestamp)
+        detector = self._get_detector(running_mode="IMAGE")
+        timestamp_ms = int(timestamp * 1000)
+        result = self._process_frame_bgr(frame_bgr, timestamp, timestamp_ms, detector)
         event = self.event_logger.process(result)
         return result, event
 
-    def _process_frame_bgr(self, frame_bgr, timestamp: float) -> FrameResult:
+    def _process_frame_bgr(
+        self,
+        frame_bgr,
+        timestamp: float,
+        timestamp_ms: int,
+        detector: DetectionEngine,
+    ) -> FrameResult:
         """Internal: run L1 → L2 → L3 on one frame."""
         # --- L1: Detection ---
-        # TODO: replace stub with real detection once detection.py is ready
-        # face_data = self.detector.detect(frame_bgr, timestamp)
-        face_data = _stub_detect(frame_bgr, timestamp)
+        face_data = detector.detect(frame_bgr, timestamp_ms)
 
         if face_data is None:
-            # No face in frame
-            from app.models.schemas import FeatureVector
             return FrameResult(
                 timestamp=timestamp,
                 features=FeatureVector(
@@ -137,11 +153,7 @@ class Pipeline:
         self.classifier.reset()
         self.event_logger.reset()
 
-
-def _stub_detect(frame_bgr, timestamp: float):
-    """Temporary stub — returns None (no face) until detection.py is ready.
-
-    Replace this entire function with a real DetectionEngine call.
-    """
-    # TODO: remove stub once detection.py is implemented
-    return None
+    def close(self) -> None:
+        """Release resources."""
+        if self._detector:
+            self._detector.close()
