@@ -10,9 +10,9 @@
 | MediaPipe FaceLandmarker integration | Backend L1 | | TODO |
 | EAR, MAR, gaze, head pose extraction | Backend L2 | Amir | DONE |
 | Rule-based engagement classifier | Backend L3 | | DONE |
-| Timeline event logger | Backend L4 | | TODO |
-| `/analyze` POST endpoint | Backend L7 | | TODO |
-| `/session/{id}` GET endpoint | Backend L7 | | TODO |
+| Timeline event logger | Backend L4 | | DONE |
+| `/analyze` POST endpoint | Backend L7 | | DONE |
+| `/session/{id}` GET endpoint | Backend L7 | | DONE |
 | Upload / Capture page | Frontend P1 | | TODO |
 | Session Timeline page | Frontend P3 | | TODO |
 | Analytics Dashboard page | Frontend P4 | | TODO |
