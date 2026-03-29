@@ -99,7 +99,10 @@ class DetectionEngine:
         self._running_mode = mode
 
         # Full-frame detector (for VIDEO mode with timestamp tracking)
-        base_options = mp.tasks.BaseOptions(model_asset_path=resolved_path)
+        base_options = mp.tasks.BaseOptions(
+            model_asset_path=resolved_path,
+            delegate=mp.tasks.BaseOptions.Delegate.CPU,
+        )
         options = vision.FaceLandmarkerOptions(
             base_options=base_options,
             running_mode=mode,
@@ -115,7 +118,10 @@ class DetectionEngine:
         # Tile detector (always IMAGE mode, lower confidence for small faces in tiles)
         tile_conf = min(0.3, min_detection_confidence)
         tile_options = vision.FaceLandmarkerOptions(
-            base_options=mp.tasks.BaseOptions(model_asset_path=resolved_path),
+            base_options=mp.tasks.BaseOptions(
+                model_asset_path=resolved_path,
+                delegate=mp.tasks.BaseOptions.Delegate.CPU,
+            ),
             running_mode=vision.RunningMode.IMAGE,
             output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
