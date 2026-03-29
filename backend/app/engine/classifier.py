@@ -4,6 +4,22 @@ Takes a FeatureVector and classifies into three engagement levels.
 Tracks temporal state so that transient conditions (a single blink)
 don't immediately trigger disengaged — only sustained conditions do.
 
+Disengagement signals for classroom settings:
+- Eyes closed (sleeping)
+- Yawning (fatigue)
+- Gaze away from screen (distraction)
+- Head turned away (talking to neighbor, looking elsewhere)
+- Head pitched down (phone, sleeping)
+- Drowsiness (slow blinks, drooping eyelids)
+- Fidgeting (rapid head movement = looking around the room)
+
+Passive signals:
+- Gaze drifting (not fully away, but not on-screen)
+- Frozen face (low expression variance = zoned out)
+- Head slightly off-center
+- Confused (sustained brow furrow)
+- Low head motion with low expression variance (catatonic stare)
+
 All thresholds are configurable via ClassifierConfig.
 """
 
@@ -17,23 +33,19 @@ class ClassifierConfig:
     """All thresholds used by the engagement classifier."""
 
     # EAR thresholds
-    # Real data: open ~0.35-0.53, closed ~0.03-0.10
     ear_open: float = 0.15          # above = eyes open
     eye_closed_duration: float = 0.5  # seconds of EAR < ear_open → disengaged
 
     # MAR thresholds (using jawOpen blendshape: 0.0-1.0)
-    # Real data: closed 0.00-0.10, talking 0.3-0.5, yawn 0.7+
     mar_yawn: float = 0.7           # above = yawning
     yawn_duration: float = 2.0      # seconds of MAR > mar_yawn → disengaged
 
     # Gaze thresholds
-    # Real data: on-screen ~0.7-0.9, drifting ~0.5-0.7, away ~0.1-0.3
     gaze_on_screen: float = 0.6     # above = looking at screen
     gaze_passive: float = 0.35      # above this but below on_screen = drifting
     gaze_away_duration: float = 3.0  # seconds of gaze < gaze_passive → disengaged
 
-    # Head pose thresholds (degrees, absolute values)
-    # Real data: webcam yaw is small (-7 to +7 for normal), pitch -18 to +17
+    # Head pose thresholds (degrees)
     head_yaw_engaged: float = 8.0    # below = facing forward
     head_yaw_passive: float = 15.0   # between engaged and this = passive; above = disengaged
     head_pitch_engaged: float = 15.0  # below = head level
@@ -43,8 +55,19 @@ class ClassifierConfig:
     # Expression variance
     expression_var_threshold: float = 0.02  # below = frozen face
 
-    # Confidence weights for combining signals
-    # (not used for classification, but reported in output)
+    # Drowsiness thresholds
+    drowsiness_passive: float = 0.3   # above = getting drowsy (passive signal)
+    drowsiness_disengaged: float = 0.6  # above = clearly drowsy (disengaged)
+    drowsiness_duration: float = 2.0  # seconds sustained → disengaged
+
+    # Head motion (fidgeting)
+    head_motion_distracted: float = 3.0  # above = fidgeting/looking around
+    head_motion_distracted_duration: float = 2.0  # seconds sustained → disengaged
+    head_motion_still: float = 0.3  # below = unnaturally still (passive signal)
+
+    # Brow state
+    brow_furrow_threshold: float = 0.3  # above = confused/frustrated (passive signal)
+    brow_furrow_duration: float = 5.0  # seconds of sustained furrow → passive
 
 
 @dataclass
@@ -56,6 +79,9 @@ class _TemporalState:
     gaze_away_since: float | None = None
     head_turned_since: float | None = None
     head_pitched_since: float | None = None
+    drowsy_since: float | None = None
+    fidgeting_since: float | None = None
+    brow_furrowed_since: float | None = None
 
 
 class EngagementClassifier:
@@ -71,60 +97,73 @@ class EngagementClassifier:
         self._last_timestamp: float | None = None
 
     def classify(self, features: FeatureVector) -> tuple[EngagementState, float]:
-        """Classify a single frame's features into an engagement state.
-
-        Args:
-            features: The extracted feature vector for this frame.
-
-        Returns:
-            (state, confidence) where confidence is 0.0-1.0.
-        """
+        """Classify a single frame's features into an engagement state."""
         t = features.timestamp
         c = self.config
 
         # --- Update temporal trackers ---
 
-        # Eyes closed tracking
+        # Eyes closed
         if features.ear_avg < c.ear_open:
             if self._state.eyes_closed_since is None:
                 self._state.eyes_closed_since = t
         else:
             self._state.eyes_closed_since = None
 
-        # Yawn tracking
+        # Yawning
         if features.mar > c.mar_yawn:
             if self._state.yawning_since is None:
                 self._state.yawning_since = t
         else:
             self._state.yawning_since = None
 
-        # Gaze away tracking
+        # Gaze away
         if features.gaze_score < c.gaze_passive:
             if self._state.gaze_away_since is None:
                 self._state.gaze_away_since = t
         else:
             self._state.gaze_away_since = None
 
-        # Head turned tracking (yaw)
+        # Head turned (yaw)
         if abs(features.head_yaw) > c.head_yaw_passive:
             if self._state.head_turned_since is None:
                 self._state.head_turned_since = t
         else:
             self._state.head_turned_since = None
 
-        # Head pitch tracking (looking down/up)
+        # Head pitched (looking down/up)
         if abs(features.head_pitch) > c.head_pitch_disengaged:
             if self._state.head_pitched_since is None:
                 self._state.head_pitched_since = t
         else:
             self._state.head_pitched_since = None
 
+        # Drowsiness
+        if features.drowsiness > c.drowsiness_disengaged:
+            if self._state.drowsy_since is None:
+                self._state.drowsy_since = t
+        else:
+            self._state.drowsy_since = None
+
+        # Fidgeting (high head motion)
+        if features.head_motion > c.head_motion_distracted:
+            if self._state.fidgeting_since is None:
+                self._state.fidgeting_since = t
+        else:
+            self._state.fidgeting_since = None
+
+        # Brow furrow
+        if features.brow_furrow > c.brow_furrow_threshold:
+            if self._state.brow_furrowed_since is None:
+                self._state.brow_furrowed_since = t
+        else:
+            self._state.brow_furrowed_since = None
+
         self._last_timestamp = t
 
         # --- Check disengaged conditions (any one triggers it) ---
 
         disengaged_signals = 0
-        total_signals = 5  # eyes, yawn, gaze, head yaw, head pitch
 
         if (self._state.eyes_closed_since is not None
                 and (t - self._state.eyes_closed_since) >= c.eye_closed_duration):
@@ -140,30 +179,36 @@ class EngagementClassifier:
 
         if (self._state.head_turned_since is not None
                 and (t - self._state.head_turned_since) >= 0):
-            # Head yaw > 15° is immediately disengaged
             disengaged_signals += 1
 
         if (self._state.head_pitched_since is not None
                 and (t - self._state.head_pitched_since) >= c.head_pitch_duration):
-            # Head pitch > 20° sustained for >3s = looking down/up
+            disengaged_signals += 1
+
+        # Drowsiness sustained → disengaged
+        if (self._state.drowsy_since is not None
+                and (t - self._state.drowsy_since) >= c.drowsiness_duration):
+            disengaged_signals += 1
+
+        # Fidgeting sustained → disengaged (looking around the room)
+        if (self._state.fidgeting_since is not None
+                and (t - self._state.fidgeting_since) >= c.head_motion_distracted_duration):
             disengaged_signals += 1
 
         if disengaged_signals > 0:
-            confidence = min(1.0, 0.5 + 0.15 * disengaged_signals)
+            confidence = min(1.0, 0.5 + 0.12 * disengaged_signals)
             return EngagementState.DISENGAGED, confidence
 
-        # --- Check passive conditions ---
+        # --- Check passive conditions (need >= 2 to trigger) ---
 
         passive_signals = 0
-        total_passive = 4
 
-        # Eyes open but gaze drifting
-        gaze_drifting = (features.gaze_score < c.gaze_on_screen
-                         and features.gaze_score >= c.gaze_passive)
-        if gaze_drifting:
+        # Gaze drifting
+        if (features.gaze_score < c.gaze_on_screen
+                and features.gaze_score >= c.gaze_passive):
             passive_signals += 1
 
-        # Low expression variance (frozen face)
+        # Frozen face (low expression variance)
         if features.expression_variance < c.expression_var_threshold:
             passive_signals += 1
 
@@ -176,13 +221,27 @@ class EngagementClassifier:
         if abs(features.head_pitch) > c.head_pitch_engaged:
             passive_signals += 1
 
+        # Getting drowsy (not fully drowsy, but showing signs)
+        if (features.drowsiness > c.drowsiness_passive
+                and features.drowsiness <= c.drowsiness_disengaged):
+            passive_signals += 1
+
+        # Unnaturally still (low head motion + low expression variance = catatonic)
+        if (features.head_motion < c.head_motion_still
+                and features.expression_variance < c.expression_var_threshold):
+            passive_signals += 1
+
+        # Sustained brow furrow = confused
+        if (self._state.brow_furrowed_since is not None
+                and (t - self._state.brow_furrowed_since) >= c.brow_furrow_duration):
+            passive_signals += 1
+
         if passive_signals >= 2:
-            confidence = min(1.0, 0.4 + 0.15 * passive_signals)
+            confidence = min(1.0, 0.4 + 0.12 * passive_signals)
             return EngagementState.PASSIVE, confidence
 
         # --- Default: engaged ---
 
-        # Confidence is higher when all engaged signals are strong
         engaged_score = 0.0
         checks = 0
 
@@ -200,6 +259,14 @@ class EngagementClassifier:
 
         if features.expression_variance >= c.expression_var_threshold:
             engaged_score += 1.0
+        checks += 1
+
+        if features.drowsiness < c.drowsiness_passive:
+            engaged_score += 1.0
+        checks += 1
+
+        if features.brow_raise > 0.1:  # raised brows = attentive
+            engaged_score += 0.5
         checks += 1
 
         confidence = max(0.5, engaged_score / checks)

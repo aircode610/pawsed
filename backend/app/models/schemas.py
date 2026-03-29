@@ -79,7 +79,13 @@ class FeatureVector:
     head_yaw: float          # degrees — positive = looking right
     head_roll: float         # degrees — positive = tilting right
     expression_variance: float  # std dev of blendshapes over window
-    timestamp: float = 0.0  # seconds from session start
+    # Classroom engagement features
+    blink_rate: float = 0.0       # blinks per minute (rolling window)
+    drowsiness: float = 0.0       # 0 = alert, 1 = drowsy (slow blinks + partial closure)
+    head_motion: float = 0.0      # head movement intensity (low = still, high = fidgeting)
+    brow_furrow: float = 0.0      # 0 = relaxed, 1 = furrowed (confusion/frustration)
+    brow_raise: float = 0.0       # 0 = relaxed, 1 = raised (surprise/attention)
+    timestamp: float = 0.0        # seconds from session start
 
 
 @dataclass

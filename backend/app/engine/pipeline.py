@@ -77,6 +77,8 @@ class Pipeline:
                 "ear_open": cfg.ear_open,
                 "gaze_passive": cfg.gaze_passive,
                 "head_pitch_disengaged": cfg.head_pitch_disengaged,
+                "drowsiness_disengaged": cfg.drowsiness_disengaged,
+                "head_motion_distracted": cfg.head_motion_distracted,
             }
         )
 

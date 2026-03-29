@@ -17,6 +17,8 @@ EVENT_YAWN = "yawn"
 EVENT_EYES_CLOSED = "eyes_closed"
 EVENT_LOOKED_AWAY = "looked_away"
 EVENT_LOOKED_DOWN = "looked_down"
+EVENT_DROWSY = "drowsy"
+EVENT_DISTRACTED = "distracted"
 EVENT_ZONED_OUT = "zoned_out"
 EVENT_FACE_LOST = "face_lost"
 
@@ -36,11 +38,17 @@ def _classify_event_type(features: FeatureVector, config_thresholds: dict) -> st
     ear_open = config_thresholds.get("ear_open", 0.15)
     gaze_passive = config_thresholds.get("gaze_passive", 0.35)
     head_pitch_disengaged = config_thresholds.get("head_pitch_disengaged", 20.0)
+    drowsiness_disengaged = config_thresholds.get("drowsiness_disengaged", 0.6)
+    head_motion_distracted = config_thresholds.get("head_motion_distracted", 3.0)
 
     if features.mar > mar_yawn:
         return EVENT_YAWN
     if features.ear_avg < ear_open:
         return EVENT_EYES_CLOSED
+    if features.drowsiness > drowsiness_disengaged:
+        return EVENT_DROWSY
+    if features.head_motion > head_motion_distracted:
+        return EVENT_DISTRACTED
     if abs(features.head_pitch) > head_pitch_disengaged:
         return EVENT_LOOKED_DOWN
     if features.gaze_score < gaze_passive:
