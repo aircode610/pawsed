@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # MediaPipe
     model_path: str = "models/face_landmarker.task"
     processing_fps: int = 5
+    max_workers: int = 2  # parallel video processing workers — keep low on RAM-constrained hosts
 
     # Claude API
     anthropic_api_key: str = ""
