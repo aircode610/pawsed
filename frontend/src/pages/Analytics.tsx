@@ -82,9 +82,9 @@ const AnalyticsPage = () => {
 
       {/* Headline */}
       <Card className="bg-card border-border p-6 text-center">
-        <p className="text-muted-foreground mb-1">You were focused</p>
+        <p className="text-muted-foreground mb-1">Class Engagement</p>
         <p className={`text-5xl font-bold ${pctColor}`}>{focusPct}%</p>
-        <p className="text-muted-foreground text-sm mt-1">of this session</p>
+        <p className="text-muted-foreground text-sm mt-1">of students engaged during this lecture</p>
         <p className="text-xs text-muted-foreground mt-3">
           {new Date(session.created_at).toLocaleDateString()} · {formatTime(duration)}
         </p>
@@ -92,7 +92,7 @@ const AnalyticsPage = () => {
 
       {/* Engagement Over Time */}
       <Card className="bg-card border-border p-4">
-        <h3 className="text-sm font-medium text-foreground mb-4">Engagement Over Time</h3>
+        <h3 className="text-sm font-medium text-foreground mb-4">Student Engagement Over Time</h3>
         <ResponsiveContainer width="100%" height={300}>
           <AreaChart data={curveData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
             <defs>

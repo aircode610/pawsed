@@ -77,11 +77,11 @@ const UploadPage = () => {
       {/* Header */}
       <div className="text-center mb-10 max-w-xl">
         <h1 className="text-3xl font-bold text-foreground mb-2">
-          Analyze Your Focus
+          Analyze Class Engagement
         </h1>
         <p className="text-muted-foreground">
-          Upload a lecture recording or start a live session to understand your
-          engagement patterns
+          Upload a lecture recording to analyze your students' engagement
+          patterns
         </p>
       </div>
 
@@ -181,7 +181,7 @@ const UploadPage = () => {
                     <div className="h-full bg-primary animate-indeterminate rounded-full" />
                   </div>
                   <p className="text-xs text-muted-foreground text-center animate-pulse">
-                    Analyzing engagement patterns...
+                    Analyzing student engagement...
                   </p>
                 </div>
               ) : (
