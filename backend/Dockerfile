@@ -11,11 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python deps — swap opencv-python for headless (no X11 needed)
+# Install Python deps
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
- && pip install --no-cache-dir opencv-python-headless \
- && pip uninstall -y opencv-python 2>/dev/null || true
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Download MediaPipe face landmarker model (~3 MB)
 RUN mkdir -p /app/models && \

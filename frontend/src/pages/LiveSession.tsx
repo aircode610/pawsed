@@ -60,7 +60,7 @@ const LiveSessionPage = () => {
   const stopSession = useCallback(() => {
     setStopping(true);
     streamRef.current?.getTracks().forEach((t) => t.stop());
-    setTimeout(() => navigate("/session/live-demo/timeline"), 1500);
+    setTimeout(() => navigate("/sessions"), 1500);
   }, [navigate]);
 
   if (cameraState === "denied") {

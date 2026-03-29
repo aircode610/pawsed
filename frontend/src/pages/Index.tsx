@@ -61,14 +61,13 @@ const UploadPage = () => {
     try {
       const { session_id } = await analyzeVideo(file);
       navigate(`/session/${session_id}/timeline`);
-    } catch {
-      // API unavailable — fall back to demo
+    } catch (err) {
       toast({
-        title: "Backend not connected",
-        description: "Using demo mode. Connect the API for real analysis.",
+        title: "Analysis failed",
+        description: err instanceof Error ? err.message : "Could not connect to the server. Please try again.",
         variant: "destructive",
       });
-      setTimeout(() => navigate("/session/demo/timeline"), 2000);
+      setAnalyzing(false);
     }
   };
 
