@@ -3,7 +3,9 @@
 All endpoints require authentication — each lecturer sees only their own sessions.
 """
 
+import logging
 import os
+import pickle
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
@@ -14,7 +16,7 @@ from app.core.auth import get_current_user, get_optional_user
 from app.core.config import settings
 from app.db.database import get_db
 from app.db.models import User
-from app.engine.overlay import render_annotated_video
+from app.engine.overlay import render_annotated_video_from_results
 from app.engine.pipeline import Pipeline
 from app.storage.sessions import (
     create_session,
@@ -24,6 +26,13 @@ from app.storage.sessions import (
 )
 
 router = APIRouter()
+
+
+def _results_path(session_id: str) -> Path:
+    """Path for the pickle file storing pipeline results (for overlay regeneration)."""
+    p = Path(settings.sessions_dir) / "results"
+    p.mkdir(parents=True, exist_ok=True)
+    return p / f"{session_id}_results.pkl"
 
 _CONTENT_TYPE_MAP = {
     ".mp4": "video/mp4",
@@ -72,20 +81,28 @@ async def analyze_video(
         pipeline = Pipeline()
         results, events, duration = pipeline.process_video_parallel(str(video_path))
         save_session_results(db, session_id, results, events, duration)
-
-        annotated_path = _videos_dir() / f"{session_id}_landmarks.mp4"
-        try:
-            render_annotated_video(str(video_path), str(annotated_path), pipeline)
-        except Exception as overlay_err:
-            import logging
-            logging.warning(f"Failed to generate landmarks overlay: {overlay_err}")
-        finally:
-            pipeline.close()
+        pipeline.close()
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"error": {"code": "PROCESSING_ERROR", "message": str(e)}},
         )
+
+    # Persist results to disk so the overlay can be regenerated later
+    # (e.g. if the landmarks video is lost or the session is re-opened).
+    try:
+        with open(_results_path(session_id), "wb") as f:
+            pickle.dump(results, f)
+    except Exception as e:
+        logging.warning(f"Failed to save results pickle: {e}")
+
+    # Render overlay synchronously — only ~8s with pre-computed face_data,
+    # so the landmarks video is guaranteed ready when the API responds.
+    annotated_path = _videos_dir() / f"{session_id}_landmarks.mp4"
+    try:
+        render_annotated_video_from_results(str(video_path), str(annotated_path), results)
+    except Exception as e:
+        logging.warning(f"Overlay render failed: {e}", exc_info=True)
 
     return {"data": {"session_id": session_id, "status": "done"}}
 
@@ -142,8 +159,28 @@ async def get_session_video(
 
     if landmarks:
         lm_path = videos / f"{session_id}_landmarks.mp4"
+        if not lm_path.exists():
+            # Try to regenerate from saved results pickle
+            pkl = _results_path(session_id)
+            if pkl.exists():
+                try:
+                    with open(pkl, "rb") as f:
+                        saved_results = pickle.load(f)
+                    orig_path = next(
+                        (videos / f"{session_id}{ext}" for ext in (".mp4", ".webm", ".mov")
+                         if (videos / f"{session_id}{ext}").exists()),
+                        None,
+                    )
+                    if orig_path:
+                        render_annotated_video_from_results(str(orig_path), str(lm_path), saved_results)
+                except Exception as e:
+                    logging.warning(f"Overlay regeneration failed: {e}", exc_info=True)
         if lm_path.exists():
             return FileResponse(path=str(lm_path), media_type="video/mp4", filename=f"{session_id}_landmarks.mp4")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "LANDMARKS_NOT_AVAILABLE", "message": "Landmarks overlay not available for this session"}},
+        )
 
     for ext in (".mp4", ".webm", ".mov"):
         path = videos / f"{session_id}{ext}"

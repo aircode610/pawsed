@@ -305,6 +305,7 @@ class Pipeline:
                 state=state,
                 confidence=confidence,
                 face_detected=True,
+                face_data=face_data,
                 centroid_x=cx,
                 centroid_y=cy,
             ))

@@ -17,6 +17,7 @@ const EMPTY_SESSION: SessionData = {
   },
   events: [],
   engagement_states: [],
+  has_landmarks: false,
 };
 
 export function useSessionData(id: string | undefined) {
