@@ -13,6 +13,7 @@ from langchain_core.messages.utils import trim_messages, count_tokens_approximat
 from langgraph.graph import StateGraph, START, END, MessagesState
 
 from app.analytics.prompts import TEACHING_COACH_SYSTEM
+from app.analytics.transcription import build_topic_map
 from app.models.analytics import (
     EngagementSegment,
     Event,
@@ -68,18 +69,27 @@ def _build_system_prompt(state: dict) -> str:
         if seg.state == "disengaged" and (seg.end - seg.start) > 60:
             danger_zones.append(f"{_fmt_time(seg.start)}–{_fmt_time(seg.end)}")
 
-    # Section scoring summary (if available)
+    # Topic map + section scoring summary (if available)
+    topic_map = ""
     sections_text = ""
     section_scoring = state.get("section_scoring")
-    if section_scoring:
-        sections_text = "\n\nSECTION SCORING:\n"
+    if section_scoring and section_scoring.sections:
+        # Compact topic map — placed near the top of context so Claude references topics in replies
+        section_dicts = [s.model_dump() for s in section_scoring.sections]
+        raw_map = build_topic_map(section_dicts)
+        if raw_map:
+            topic_map = f"\n\n{raw_map}\n"
+
+        sections_text = "\n\nSECTION DETAILS:\n"
         for s in section_scoring.sections:
             sections_text += (
                 f"- {s.label} ({_fmt_time(s.start)}–{_fmt_time(s.end)}): "
                 f"{s.engagement_pct:.0f}% engagement"
             )
+            if s.topic:
+                sections_text += f" | Topic: {s.topic}"
             if s.top_event:
-                sections_text += f", top event: {s.top_event}"
+                sections_text += f" | Top event: {s.top_event}"
             sections_text += "\n"
         if section_scoring.overall_summary:
             sections_text += f"\nOverall: {section_scoring.overall_summary}\n"
@@ -113,6 +123,7 @@ def _build_system_prompt(state: dict) -> str:
         time_disengaged=time_in_state["disengaged"],
         events_desc=events_desc,
         danger_zones=", ".join(danger_zones) if danger_zones else "none",
+        topic_map=topic_map,
         sections_text=sections_text,
         history_text=history_text,
         event_log=event_log,

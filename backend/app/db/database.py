@@ -16,8 +16,22 @@ class Base(DeclarativeBase):
 
 
 def init_db():
-    """Create all tables."""
+    """Create all tables and apply any missing column migrations."""
+    from sqlalchemy import inspect, text
     Base.metadata.create_all(bind=engine)
+
+    # Additive migrations for columns added after initial deploy
+    _MIGRATIONS = [
+        ("sessions", "transcript_json", "TEXT"),
+        ("sessions", "scoring_json",    "TEXT"),
+    ]
+    inspector = inspect(engine)
+    with engine.connect() as conn:
+        for table, col, col_type in _MIGRATIONS:
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+                conn.commit()
 
 
 def get_db():

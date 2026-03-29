@@ -41,19 +41,19 @@ class ClassifierConfig:
     yawn_duration: float = 2.0      # seconds of MAR > mar_yawn → disengaged
 
     # Gaze thresholds
-    gaze_on_screen: float = 0.6     # above = looking at screen
+    gaze_on_screen: float = 0.5     # above = looking at screen (widened: 0.5→1.0 is "on screen")
     gaze_passive: float = 0.35      # above this but below on_screen = drifting
     gaze_away_duration: float = 3.0  # seconds of gaze < gaze_passive → disengaged
 
     # Head pose thresholds (degrees)
-    head_yaw_engaged: float = 8.0    # below = facing forward
+    head_yaw_engaged: float = 12.0   # below = facing forward (raised: normal posture varies ±12°)
     head_yaw_passive: float = 15.0   # between engaged and this = passive; above = disengaged
     head_pitch_engaged: float = 15.0  # below = head level
     head_pitch_disengaged: float = 20.0  # above = looking down/up significantly
     head_pitch_duration: float = 3.0  # seconds of pitch > threshold → disengaged
 
     # Expression variance
-    expression_var_threshold: float = 0.02  # below = frozen face
+    expression_var_threshold: float = 0.01  # below = frozen face (tightened: only very still faces)
 
     # Drowsiness thresholds
     drowsiness_passive: float = 0.3   # above = getting drowsy (passive signal)
@@ -198,47 +198,6 @@ class EngagementClassifier:
         if disengaged_signals > 0:
             confidence = min(1.0, 0.5 + 0.12 * disengaged_signals)
             return EngagementState.DISENGAGED, confidence
-
-        # --- Check passive conditions (need >= 2 to trigger) ---
-
-        passive_signals = 0
-
-        # Gaze drifting
-        if (features.gaze_score < c.gaze_on_screen
-                and features.gaze_score >= c.gaze_passive):
-            passive_signals += 1
-
-        # Frozen face (low expression variance)
-        if features.expression_variance < c.expression_var_threshold:
-            passive_signals += 1
-
-        # Head slightly off-center
-        if (abs(features.head_yaw) > c.head_yaw_engaged
-                and abs(features.head_yaw) <= c.head_yaw_passive):
-            passive_signals += 1
-
-        # Head pitch slightly off
-        if abs(features.head_pitch) > c.head_pitch_engaged:
-            passive_signals += 1
-
-        # Getting drowsy (not fully drowsy, but showing signs)
-        if (features.drowsiness > c.drowsiness_passive
-                and features.drowsiness <= c.drowsiness_disengaged):
-            passive_signals += 1
-
-        # Unnaturally still (low head motion + low expression variance = catatonic)
-        if (features.head_motion < c.head_motion_still
-                and features.expression_variance < c.expression_var_threshold):
-            passive_signals += 1
-
-        # Sustained brow furrow = confused
-        if (self._state.brow_furrowed_since is not None
-                and (t - self._state.brow_furrowed_since) >= c.brow_furrow_duration):
-            passive_signals += 1
-
-        if passive_signals >= 2:
-            confidence = min(1.0, 0.4 + 0.12 * passive_signals)
-            return EngagementState.PASSIVE, confidence
 
         # --- Default: engaged ---
 

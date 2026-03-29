@@ -4,6 +4,7 @@ export interface SessionEvent {
   duration: number;
   confidence: number;
   metadata: Record<string, unknown>;
+  severity: "brief" | "significant";
 }
 
 export interface EngagementSegment {
@@ -36,6 +37,7 @@ export interface SessionData {
   events: SessionEvent[];
   engagement_states: EngagementSegment[];
   has_landmarks: boolean;
+  scoring_ready: boolean;
 }
 
 export interface SessionSummary {
@@ -63,6 +65,7 @@ export interface LectureSection {
   top_event: string | null;
   events_in_section: SessionEvent[];
   ai_note: string;
+  topic: string;
 }
 
 export interface SectionScoringData {

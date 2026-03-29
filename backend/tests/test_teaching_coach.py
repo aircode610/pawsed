@@ -147,14 +147,14 @@ class TestSystemPrompt:
 
     def test_includes_section_scoring_when_provided(self):
         prompt = self._get_prompt(section_scoring=MOCK_SECTION_SCORING)
-        assert "SECTION SCORING" in prompt
+        assert "SECTION DETAILS" in prompt
         assert "Introduction" in prompt
         assert "Danger Zone" in prompt
         assert "Strong opening and close" in prompt
 
     def test_excludes_section_scoring_when_none(self):
         prompt = self._get_prompt(section_scoring=None)
-        assert "SECTION SCORING" not in prompt
+        assert "SECTION DETAILS" not in prompt
 
     def test_includes_historical_sessions(self):
         prompt = self._get_prompt(historical_sessions=MOCK_HISTORICAL)

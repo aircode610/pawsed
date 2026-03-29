@@ -97,10 +97,11 @@ class TestBasicClassification:
         assert state == EngagementState.ENGAGED
         assert conf >= 0.5
 
-    def test_passive_state(self):
+    def test_passive_features_now_engaged(self):
+        """Passive state is removed — previously passive features now classify as engaged."""
         clf = EngagementClassifier()
         state, conf = clf.classify(_passive_features(0.0))
-        assert state == EngagementState.PASSIVE
+        assert state == EngagementState.ENGAGED
 
     def test_disengaged_head_turned(self):
         """Head yaw > 30° should immediately classify as disengaged."""
@@ -198,13 +199,13 @@ class TestTemporalTracking:
 # ---------------------------------------------------------------------------
 
 class TestTransitions:
-    def test_engaged_to_passive(self):
-        """Student starts engaged then drifts to passive."""
+    def test_passive_features_stay_engaged(self):
+        """Passive state is removed — previously passive features stay as engaged."""
         clf = EngagementClassifier()
         state1, _ = clf.classify(_engaged_features(0.0))
         state2, _ = clf.classify(_passive_features(1.0))
         assert state1 == EngagementState.ENGAGED
-        assert state2 == EngagementState.PASSIVE
+        assert state2 == EngagementState.ENGAGED
 
     def test_engaged_to_disengaged_via_eye_closure(self):
         """Student closes eyes gradually."""
@@ -229,7 +230,7 @@ class TestTransitions:
         assert state2 == EngagementState.ENGAGED
 
     def test_full_session_sequence(self):
-        """Simulate a realistic session: engaged → passive → disengaged → engaged."""
+        """Simulate a realistic session: engaged → (passive features = engaged) → disengaged → engaged."""
         clf = EngagementClassifier()
         results = []
 
@@ -238,7 +239,7 @@ class TestTransitions:
             state, _ = clf.classify(_engaged_features(t))
             results.append((t, state))
 
-        # Passive period (5-10s)
+        # "Passive" features now classify as engaged (no passive state)
         for t in [5.0, 5.5, 6.0, 6.5, 7.0]:
             state, _ = clf.classify(_passive_features(t))
             results.append((t, state))
@@ -255,7 +256,7 @@ class TestTransitions:
 
         # Check key transitions
         assert results[0][1] == EngagementState.ENGAGED
-        assert results[5][1] == EngagementState.PASSIVE
+        assert results[5][1] == EngagementState.ENGAGED  # passive features → engaged
         # Yawning at t=12.5 is 2.5s after start at t=10.0
         assert results[-6][1] == EngagementState.DISENGAGED
         assert results[-1][1] == EngagementState.ENGAGED
@@ -295,19 +296,19 @@ class TestEdgeCases:
         """A single passive signal shouldn't downgrade to passive (need >= 2)."""
         clf = EngagementClassifier()
         features = _engaged_features(0.0)
-        # Only make gaze slightly drifting
-        features.gaze_score = 0.50  # between 0.35 and 0.6 = drifting
+        # Only make gaze slightly drifting (between gaze_passive=0.35 and gaze_on_screen=0.5)
+        features.gaze_score = 0.40
         state, _ = clf.classify(features)
         assert state == EngagementState.ENGAGED
 
-    def test_two_passive_signals_triggers_passive(self):
-        """Two passive signals should classify as passive."""
+    def test_two_passive_signals_still_engaged(self):
+        """Passive state removed — even two passive signals classify as engaged."""
         clf = EngagementClassifier()
         features = _engaged_features(0.0)
-        features.gaze_score = 0.50  # drifting (between 0.35 and 0.6)
-        features.expression_variance = 0.01  # frozen face
+        features.gaze_score = 0.40  # drifting
+        features.expression_variance = 0.005  # frozen face
         state, _ = clf.classify(features)
-        assert state == EngagementState.PASSIVE
+        assert state == EngagementState.ENGAGED
 
 
 # ---------------------------------------------------------------------------
