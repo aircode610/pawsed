@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/AppLayout";
 import Index from "./pages/Index";
-import LiveSession from "./pages/LiveSession";
+
 import Timeline from "./pages/Timeline";
 import Analytics from "./pages/Analytics";
 import FocusReport from "./pages/FocusReport";
@@ -25,7 +25,6 @@ const App = () => (
         <Routes>
           <Route element={<AppLayout />}>
             <Route path="/" element={<Index />} />
-            <Route path="/live" element={<LiveSession />} />
             <Route path="/session/:id/timeline" element={<Timeline />} />
             <Route path="/session/:id/analytics" element={<Analytics />} />
             <Route path="/session/:id/report" element={<FocusReport />} />
