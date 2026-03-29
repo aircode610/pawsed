@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # MediaPipe
     model_path: str = "models/face_landmarker.task"
-    processing_fps: int = 10
+    processing_fps: int = 5
 
     # Claude API
     anthropic_api_key: str = ""

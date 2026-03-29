@@ -225,7 +225,7 @@ class Pipeline:
         cap.release()
 
         if workers is None:
-            workers = min(max(1, (os.cpu_count() or 4) // 2), 8)
+            workers = min(max(1, (os.cpu_count() or 4) - 2), 8)
 
         # Build frame ranges — last chunk absorbs any remainder
         chunk_size = total_frames // workers
