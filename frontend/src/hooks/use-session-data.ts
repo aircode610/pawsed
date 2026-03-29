@@ -18,6 +18,7 @@ const EMPTY_SESSION: SessionData = {
   events: [],
   engagement_states: [],
   has_landmarks: false,
+  scoring_ready: false,
 };
 
 export function useSessionData(id: string | undefined) {

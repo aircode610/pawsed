@@ -10,14 +10,17 @@ review, version, and tune in one place.
 
 SECTION_SCORING_PROMPT = """You are a pedagogy expert and teaching coach analyzing a lecture for the instructor.
 The lecture was {duration_min:.0f} minutes long.
-
+{transcript_block}
 Here is the section-by-section engagement data:
 
 {sections_text}
 
-For each section, write a 1-2 sentence observation and one specific, actionable teaching suggestion.
-Use evidence-based strategies: active learning breaks, think-pair-share, polling, worked examples,
-scaffolding, varied modality. Reference the actual data (timestamps, percentages, event types).
+For each section:
+1. If transcript is provided, identify what topic was being taught (1 short sentence).
+2. Write a 1-2 sentence observation and one specific, actionable teaching suggestion.
+   Use evidence-based strategies: active learning breaks, think-pair-share, polling, worked examples,
+   scaffolding, varied modality. Reference the actual data (timestamps, percentages, event types).
+   When transcript is available, explicitly mention the topic being discussed.
 
 Tone: supportive coach, not critical. The goal is to help the lecturer improve.
 
@@ -26,7 +29,9 @@ what didn't, and the single most impactful change to make next time.
 
 Respond in this exact format (one per section, then the summary):
 
+SECTION 1 TOPIC: <what was being taught, or "Not available" if no transcript>
 SECTION 1: <your note>
+SECTION 2 TOPIC: <what was being taught, or "Not available" if no transcript>
 SECTION 2: <your note>
 ...
 OVERALL: <your summary>"""
@@ -55,7 +60,7 @@ SESSION DATA:
 - Overall focus: {focus_pct}%
 - Time breakdown: {time_engaged:.0f}s engaged, {time_passive:.0f}s passive, {time_disengaged:.0f}s disengaged
 - Events: {events_desc}
-- Danger zones: {danger_zones}{sections_text}{history_text}{event_log}
+- Danger zones: {danger_zones}{topic_map}{sections_text}{history_text}{event_log}
 
 Keep responses concise but specific. Use markdown formatting (bold, bullets, numbered lists) for readability.
 When referencing times, use mm:ss format."""

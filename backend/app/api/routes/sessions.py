@@ -6,22 +6,28 @@ All endpoints require authentication — each lecturer sees only their own sessi
 import logging
 import os
 import pickle
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session as DBSession
 
+from app.analytics.section_scoring import run_section_scoring
+from app.analytics.transcription import transcribe_video
 from app.core.auth import get_current_user, get_optional_user
 from app.core.config import settings
 from app.db.database import get_db
+from app.db.models import Session as SessionModel
 from app.db.models import User
 from app.engine.overlay import render_annotated_video_from_results
 from app.engine.pipeline import Pipeline
+from app.models.analytics import EngagementSegment, Event as AnalyticsEvent, SessionData, TranscriptSegment
 from app.storage.sessions import (
     create_session,
     get_session,
     list_sessions,
+    save_scoring,
     save_session_results,
 )
 
@@ -79,8 +85,12 @@ async def analyze_video(
 
     try:
         pipeline = Pipeline()
-        results, events, duration = pipeline.process_video_parallel(str(video_path))
-        save_session_results(db, session_id, results, events, duration)
+        # Run vision pipeline and audio transcription concurrently
+        with ThreadPoolExecutor(max_workers=2) as tex:
+            vision_future = tex.submit(pipeline.process_video_parallel, str(video_path))
+            transcript_future = tex.submit(transcribe_video, str(video_path))
+            results, events, duration = vision_future.result()
+            transcript: list[dict] = transcript_future.result()
         pipeline.close()
     except Exception as e:
         raise HTTPException(
@@ -88,21 +98,41 @@ async def analyze_video(
             detail={"error": {"code": "PROCESSING_ERROR", "message": str(e)}},
         )
 
+    save_session_results(db, session_id, results, events, duration, transcript=transcript)
+
     # Persist results to disk so the overlay can be regenerated later
-    # (e.g. if the landmarks video is lost or the session is re-opened).
     try:
         with open(_results_path(session_id), "wb") as f:
             pickle.dump(results, f)
     except Exception as e:
         logging.warning(f"Failed to save results pickle: {e}")
 
-    # Render overlay synchronously — only ~8s with pre-computed face_data,
-    # so the landmarks video is guaranteed ready when the API responds.
+    # Render overlay synchronously — ~8s with pre-computed face_data
     annotated_path = _videos_dir() / f"{session_id}_landmarks.mp4"
     try:
         render_annotated_video_from_results(str(video_path), str(annotated_path), results)
     except Exception as e:
         logging.warning(f"Overlay render failed: {e}", exc_info=True)
+
+    # Pre-generate section scoring so insights tab is instant on first open
+    try:
+        session_dict = get_session(db, session_id)
+        session_data = SessionData(
+            session_id=session_id,
+            duration=session_dict["duration"],
+            events=[AnalyticsEvent(**e) for e in session_dict.get("events", [])],
+            engagement_states=[EngagementSegment(**s) for s in session_dict.get("engagement_states", [])],
+            transcript=[TranscriptSegment(**t) for t in transcript],
+        )
+        transcript_models = [TranscriptSegment(**t) for t in transcript]
+        scoring_result = run_section_scoring(session_data, transcript=transcript_models)
+        save_scoring(db, session_id, scoring_result.model_dump())
+
+        # Also warm the in-process insights cache so the first request is instant
+        from app.api.routes.insights import _scoring_cache
+        _scoring_cache[session_id] = scoring_result
+    except Exception as e:
+        logging.warning(f"Section scoring pre-generation failed: {e}", exc_info=True)
 
     return {"data": {"session_id": session_id, "status": "done"}}
 

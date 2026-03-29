@@ -38,12 +38,22 @@ def create_session(db: DBSession, user: User, video_filename: str) -> str:
     return session_id
 
 
+def save_scoring(db: DBSession, session_id: str, scoring: dict) -> None:
+    """Persist pre-generated section scoring result for a session."""
+    session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+    if session is None:
+        return
+    session.scoring = scoring
+    db.commit()
+
+
 def save_session_results(
     db: DBSession,
     session_id: str,
     results: list[FrameResult],
     events: list[Event],
     duration: float,
+    transcript: list[dict] | None = None,
 ) -> None:
     """Persist processed pipeline results for a session."""
     session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
@@ -145,6 +155,10 @@ def save_session_results(
         peak_risk_moments.append({"start": round(start, 1), "end": round(prev_t, 1)})
 
     max_faces = max((r.total_faces for r in results), default=0)
+
+    # Save transcript if provided
+    if transcript is not None:
+        session.transcript = transcript
 
     # Update session
     session.status = "done"

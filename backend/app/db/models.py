@@ -36,6 +36,8 @@ class Session(Base):
     analytics_json = Column(Text, default="{}")
     events_json = Column(Text, default="[]")
     engagement_states_json = Column(Text, default="[]")
+    transcript_json = Column(Text, nullable=True)   # audio transcript segments [{start,end,text}]
+    scoring_json = Column(Text, nullable=True)       # cached SectionScoringResult JSON
 
     user = relationship("User", back_populates="sessions")
 
@@ -63,6 +65,22 @@ class Session(Base):
     def engagement_states(self, value: list):
         self.engagement_states_json = json.dumps(value)
 
+    @property
+    def transcript(self) -> list:
+        return json.loads(self.transcript_json) if self.transcript_json else []
+
+    @transcript.setter
+    def transcript(self, value: list):
+        self.transcript_json = json.dumps(value)
+
+    @property
+    def scoring(self) -> dict | None:
+        return json.loads(self.scoring_json) if self.scoring_json else None
+
+    @scoring.setter
+    def scoring(self, value: dict | None):
+        self.scoring_json = json.dumps(value) if value is not None else None
+
     def to_dict(self) -> dict:
         """Convert to API response format."""
         from pathlib import Path
@@ -79,6 +97,8 @@ class Session(Base):
             "events": self.events,
             "engagement_states": self.engagement_states,
             "has_landmarks": lm_path.exists() or pkl_path.exists(),
+            "scoring_ready": self.scoring_json is not None,
+            "transcript": self.transcript,
         }
 
     def to_summary(self) -> dict:

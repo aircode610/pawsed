@@ -18,6 +18,7 @@ from langgraph.graph import StateGraph, START, END
 from langchain_anthropic import ChatAnthropic
 
 from app.analytics.prompts import SECTION_SCORING_PROMPT
+from app.analytics.transcription import get_transcript_for_window
 from app.models.analytics import (
     Event,
     EngagementSegment,
@@ -25,6 +26,7 @@ from app.models.analytics import (
     SectionScoringResult,
     SessionData,
     StateBreakdown,
+    TranscriptSegment,
 )
 
 
@@ -37,6 +39,7 @@ class ScoringState(BaseModel):
 
     # Input
     session: SessionData
+    transcript: list[TranscriptSegment] = Field(default_factory=list)
 
     # Intermediate — built by segment_lecture
     sections: list[Section] = Field(default_factory=list)
@@ -169,59 +172,95 @@ def generate_ai_notes(state: ScoringState) -> dict:
     """Call Claude to generate per-section teaching advice and an overall summary."""
     model = ChatAnthropic(model="claude-sonnet-4-6", max_tokens=2000)
 
+    # Build transcript block for the prompt (one excerpt per section)
+    transcript_block = ""
+    transcript_segs = [
+        {"start": t.start, "end": t.end, "text": t.text}
+        for t in state.transcript
+    ]
+    if transcript_segs:
+        transcript_block = "\nLECTURE TRANSCRIPT (per section):\n"
+        for i, sec in enumerate(state.sections, 1):
+            text = get_transcript_for_window(transcript_segs, sec.start, sec.end)
+            if text:
+                transcript_block += f"Section {i} ({_fmt_time(sec.start)}–{_fmt_time(sec.end)}): {text}\n"
+        transcript_block += "\n"
+
     sections_text = _format_sections_for_prompt(state.sections)
 
     prompt = SECTION_SCORING_PROMPT.format(
         duration_min=state.session.duration / 60,
+        transcript_block=transcript_block,
         sections_text=sections_text,
     )
 
     response = model.invoke([{"role": "user", "content": prompt}])
     content = response.content
 
-    # Parse the response
+    # Parse response — handles both "SECTION N TOPIC:" and "SECTION N:" lines
     updated_sections = list(state.sections)
     overall_summary = ""
+    section_topics: dict[int, str] = {}
 
     lines = content.strip().split("\n")
     current_section_idx = -1
     current_text = []
+    in_overall = False
+
+    def _flush():
+        nonlocal overall_summary
+        text = " ".join(current_text).strip()
+        if in_overall:
+            overall_summary = text
+        elif current_section_idx >= 0 and current_section_idx < len(updated_sections):
+            updated_sections[current_section_idx] = updated_sections[current_section_idx].model_copy(
+                update={"ai_note": text}
+            )
 
     for line in lines:
-        line_stripped = line.strip()
-        if line_stripped.upper().startswith("SECTION "):
-            # Save previous section's text
-            if current_section_idx >= 0 and current_section_idx < len(updated_sections):
-                updated_sections[current_section_idx] = updated_sections[current_section_idx].model_copy(
-                    update={"ai_note": " ".join(current_text).strip()}
-                )
-            # Parse section number
-            try:
-                parts = line_stripped.split(":", 1)
-                num = int(parts[0].replace("SECTION", "").strip()) - 1
-                current_section_idx = num
-                current_text = [parts[1].strip()] if len(parts) > 1 else []
-            except (ValueError, IndexError):
-                current_text.append(line_stripped)
-        elif line_stripped.upper().startswith("OVERALL:"):
-            # Save last section
-            if current_section_idx >= 0 and current_section_idx < len(updated_sections):
-                updated_sections[current_section_idx] = updated_sections[current_section_idx].model_copy(
-                    update={"ai_note": " ".join(current_text).strip()}
-                )
-            current_section_idx = -1
-            overall_summary = line_stripped.split(":", 1)[1].strip() if ":" in line_stripped else ""
-            current_text = [overall_summary] if overall_summary else []
-        else:
-            current_text.append(line_stripped)
+        ls = line.strip()
+        upper = ls.upper()
 
-    # Handle final section or overall
-    if current_section_idx >= 0 and current_section_idx < len(updated_sections):
-        updated_sections[current_section_idx] = updated_sections[current_section_idx].model_copy(
-            update={"ai_note": " ".join(current_text).strip()}
-        )
-    elif current_section_idx == -1 and current_text:
-        overall_summary = " ".join(current_text).strip()
+        # "SECTION N TOPIC: ..."
+        if upper.startswith("SECTION ") and " TOPIC:" in upper:
+            try:
+                header, value = ls.split(":", 1)
+                num = int(header.upper().replace("SECTION", "").replace("TOPIC", "").strip()) - 1
+                section_topics[num] = value.strip()
+            except (ValueError, IndexError):
+                pass
+            continue
+
+        # "SECTION N: ..."
+        if upper.startswith("SECTION ") and ":" in ls:
+            _flush()
+            try:
+                header, value = ls.split(":", 1)
+                num = int(header.upper().replace("SECTION", "").strip()) - 1
+                current_section_idx = num
+                in_overall = False
+                current_text = [value.strip()] if value.strip() else []
+            except (ValueError, IndexError):
+                current_text.append(ls)
+            continue
+
+        # "OVERALL: ..."
+        if upper.startswith("OVERALL:"):
+            _flush()
+            current_section_idx = -1
+            in_overall = True
+            value = ls.split(":", 1)[1].strip() if ":" in ls else ""
+            current_text = [value] if value else []
+            continue
+
+        current_text.append(ls)
+
+    _flush()
+
+    # Apply extracted topics to sections
+    for idx, topic in section_topics.items():
+        if 0 <= idx < len(updated_sections) and topic and topic.lower() != "not available":
+            updated_sections[idx] = updated_sections[idx].model_copy(update={"topic": topic})
 
     return {"sections": updated_sections, "overall_summary": overall_summary}
 
@@ -246,7 +285,11 @@ def build_section_scoring_graph() -> StateGraph:
     return builder.compile()
 
 
-def run_section_scoring(session_data: SessionData, segment_duration: float = 300.0) -> SectionScoringResult:
+def run_section_scoring(
+    session_data: SessionData,
+    segment_duration: float = 300.0,
+    transcript: list[TranscriptSegment] | None = None,
+) -> SectionScoringResult:
     """Run the full section scoring pipeline and return the result.
 
     Args:
@@ -260,6 +303,7 @@ def run_section_scoring(session_data: SessionData, segment_duration: float = 300
 
     initial_state = ScoringState(
         session=session_data,
+        transcript=transcript or [],
         segment_duration=segment_duration,
     )
 

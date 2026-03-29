@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { MessageSquare, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { sendCoachMessage } from "@/lib/api";
 import type { ChatMessage } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
@@ -72,8 +71,6 @@ export function TeachingCoachChat({ sessionId }: Props) {
 
   return (
     <div className="space-y-4">
-      <Separator className="bg-border" />
-
       <div className="flex items-center gap-2">
         <MessageSquare className="h-5 w-5 text-primary" />
         <div>
