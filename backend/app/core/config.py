@@ -8,10 +8,10 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
-    # Database
+    # Database — on Railway set DB_PATH=/data/pawsed.db
     db_path: str = "pawsed.db"
 
-    # Storage (videos still on disk)
+    # Storage — on Railway set SESSIONS_DIR=/data/sessions
     sessions_dir: str = "sessions"
 
     # MediaPipe
@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     jwt_secret: str = "pawsed-dev-secret-change-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expire_hours: int = 72  # 3 days
+
+    # CORS — comma-separated list of allowed origins
+    # On Railway add your frontend URL: CORS_ORIGINS=https://pawsed-frontend.up.railway.app
+    cors_origins: str = "http://localhost:5173,http://localhost:3000,http://localhost:8080,http://localhost:4173"
 
     class Config:
         env_file = ".env"

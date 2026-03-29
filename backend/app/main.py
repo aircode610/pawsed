@@ -6,19 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.auth import router as auth_router
 from app.api.routes.insights import router as insights_router
 from app.api.routes.sessions import router as sessions_router
+from app.core.config import settings
 from app.db.database import init_db
 
 app = FastAPI(title="Pawsed API", version="0.1.0")
 
-# Allow requests from the frontend dev server
+origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost:8080",
-        "http://localhost:4173",
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

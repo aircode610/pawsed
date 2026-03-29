@@ -6,6 +6,120 @@ Pawsed lets lecturers upload a recorded lecture and get back a color-coded engag
 
 ---
 
+## Hackathon Requirements Coverage
+
+> **For judges:** This section maps every deliverable from the spec directly to where it lives in the codebase.
+
+| Requirement | Status | Where to look |
+|---|---|---|
+| Process video webcam recordings | ✅ | `POST /analyze` → `app/engine/pipeline.py` |
+| Detect yawning | ✅ | `app/engine/features.py` — MAR via `jawOpen` blendshape |
+| Detect prolonged inactivity | ✅ | `app/analytics/events.py` — `EVENT_PROLONGED_INACTIVITY` (defined below) |
+| Index events with timestamps + confidence | ✅ | `app/analytics/events.py` — `Event` dataclass |
+| Classify engagement as **high / low** | ✅ | `GET /session/{id}` → `engagement_level: "high" \| "low"` field |
+| Per-segment engagement (configurable length) | ✅ | `app/analytics/section_scoring.py` — `segment_duration` param (default 5 min) |
+| Structured output format | ✅ | [Output Format](#output-format) section below |
+| Quantitative evaluation (metrics, confusion matrix) | ✅ | `scripts/evaluate.py` — run: `PYTHONPATH=. python scripts/evaluate.py` |
+| Visual results (timeline, plots) | ✅ | React dashboard + `scripts/visualize.py` (Matplotlib) |
+| Tolerance for webcam quality | ✅ | MediaPipe FaceLandmarker — robust to lighting, angle, compression |
+| Working prototype + demo | ✅ | Full stack: FastAPI backend + React frontend |
+
+### Prolonged Inactivity — Definition
+
+**Criterion:** `head_motion < 0.3 units/s` **AND** `expression_variance < 0.01` sustained for **≥ 5 seconds**.
+
+Represents a student who is physically still (not fidgeting) and facially frozen (not reacting to lecture content) — a blank stare. This fires as a distinct `prolonged_inactivity` event even when no hard disengagement trigger (eyes closed, gaze away, etc.) is active.
+
+Thresholds are defined as named constants in `app/analytics/events.py`:
+```python
+INACTIVITY_MOTION_THRESHOLD    = 0.3   # head_motion units/s
+INACTIVITY_EXPRESSION_THRESHOLD = 0.01  # expression_variance
+INACTIVITY_DURATION_THRESHOLD  = 5.0   # seconds
+```
+
+### Output Format
+
+Every `/analyze` call returns a `session_id`. The full structured output is available at `GET /session/{id}`:
+
+```json
+{
+  "session_id": "abc123",
+  "duration": 96.8,
+  "engagement_level": "high",
+  "analytics": {
+    "focus_time_pct": 74.3,
+    "distraction_time_pct": 12.1,
+    "longest_focus_streak": 42.5,
+    "distraction_breakdown": { "yawn": 3, "looked_away": 7, "prolonged_inactivity": 2 },
+    "engagement_curve": [0.85, 0.72, 0.61, 0.78],
+    "danger_zones": [{ "start": 45.0, "end": 78.0, "avg_score": 0.0 }]
+  },
+  "events": [
+    {
+      "timestamp": 12.4,
+      "event_type": "yawn",
+      "duration": 3.2,
+      "confidence": 0.91,
+      "severity": "brief",
+      "metadata": {}
+    },
+    {
+      "timestamp": 31.0,
+      "event_type": "prolonged_inactivity",
+      "duration": 8.5,
+      "confidence": 0.75,
+      "severity": "significant",
+      "metadata": { "head_motion": 0.12, "expression_variance": 0.004 }
+    }
+  ],
+  "engagement_states": [
+    { "start": 0.0,  "end": 10.2, "state": "engaged" },
+    { "start": 10.2, "end": 18.7, "state": "disengaged" },
+    { "start": 18.7, "end": 96.8, "state": "engaged" }
+  ]
+}
+```
+
+### Quantitative Evaluation
+
+The classifier and event detector are evaluated against a synthetic ground-truth dataset of 13 classifier cases and 6 event detection cases with known expected outputs:
+
+```
+cd backend
+PYTHONPATH=. python scripts/evaluate.py
+```
+
+**Results (deterministic rule-based system):**
+
+```
+Class             Precision     Recall         F1
+engaged                1.00       1.00       1.00
+disengaged             1.00       1.00       1.00
+
+Overall accuracy: 1.00  (13/13 correct)
+Event detection:  Precision 1.00  Recall 1.00  F1 1.00  (6/6 correct)
+```
+
+The classifier is rule-based and deterministic, so accuracy on the synthetic test set is 100% by construction. The test cases cover all threshold boundaries, temporal hysteresis, and timer-reset behavior. See `scripts/evaluate.py` for the full case list.
+
+### Visual Results (Matplotlib)
+
+Run the standalone visualizer on any processed session to produce Matplotlib figures:
+
+```
+cd backend
+PYTHONPATH=. python scripts/visualize.py <session_id>
+# Output saved to scripts/output/<session_id>_analysis.png
+```
+
+Generates four plots: engagement timeline (color-coded band), per-minute engagement score, event type distribution, and event duration histogram (brief vs significant). No API key or running server required — reads directly from the pickle sidecar file.
+
+**Sample output** (29-minute lecture session, 8,753 frames, 63.9% focus, 541 events):
+
+![Session Analysis](docs/sample_analysis.png)
+
+---
+
 ## How It Works
 
 ### The Detection Pipeline (6 Layers)
@@ -42,7 +156,8 @@ Layer 3 — Engagement Classifier (rule-based, stateful)
 Layer 4 — Event Logger
     Emits discrete timestamped events when a distraction ends
     Types: yawn, eyes_closed, looked_away, looked_down,
-           drowsy, distracted, zoned_out, face_lost
+           drowsy, distracted, zoned_out, face_lost,
+           prolonged_inactivity (blank stare — see definition below)
     Severity: brief (<5s) or significant (≥5s)
     │
     ▼
@@ -293,6 +408,9 @@ pawsed/
 │   │   └── storage/
 │   │       └── sessions.py            # Session persistence — analytics, transcript, scoring
 │   ├── tests/                         # pytest suite (85 tests, no API key needed)
+│   ├── scripts/
+│   │   ├── evaluate.py                # Quantitative eval: confusion matrix, P/R/F1
+│   │   └── visualize.py               # Matplotlib figures from session pickle
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -316,7 +434,7 @@ pawsed/
 
 ---
 
-## Running Tests
+## Running Tests & Evaluation
 
 ```bash
 cd backend
@@ -327,7 +445,68 @@ PYTHONPATH=. pytest tests/ -v
 
 # Skip LLM integration tests
 PYTHONPATH=. pytest tests/ -v -k "not LLM"
+
+# Quantitative evaluation — classifier + event detector metrics
+PYTHONPATH=. python scripts/evaluate.py
+
+# Matplotlib visualizer — four plots from a processed session
+PYTHONPATH=. python scripts/visualize.py <session_id>
+# or point directly at a pickle:
+PYTHONPATH=. python scripts/visualize.py --pickle sessions/results/<id>_results.pkl
 ```
+
+---
+
+## Deployment (Railway)
+
+Pawsed deploys as two Railway services from the same GitHub repo — one for the backend, one for the frontend.
+
+### 1. Push to GitHub
+
+Make sure all changes are pushed to your GitHub repo.
+
+### 2. Create a Railway project
+
+[railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → select this repo.
+
+### 3. Backend service
+
+- **Root Directory:** `backend`
+- Railway will detect `backend/railway.toml` and build from `backend/Dockerfile`
+- The Dockerfile downloads the MediaPipe model (~3 MB) at build time — no manual setup needed
+
+**Add a Volume** (Settings → Volumes → Add) mounted at `/data` to persist the SQLite database and uploaded videos across deploys.
+
+**Environment variables to set:**
+
+| Variable | Value |
+|---|---|
+| `ANTHROPIC_API_KEY` | Your Anthropic key |
+| `JWT_SECRET` | A long random string |
+| `DB_PATH` | `/data/pawsed.db` |
+| `SESSIONS_DIR` | `/data/sessions` |
+| `CORS_ORIGINS` | `https://<your-frontend>.up.railway.app` (add after step 4) |
+
+### 4. Frontend service
+
+Add a second service in the same Railway project:
+
+- **Root Directory:** `frontend`
+- Railway detects `frontend/railway.toml` — builds with `npm run build`, serves with `npx serve`
+
+**Environment variables to set:**
+
+| Variable | Value |
+|---|---|
+| `VITE_API_URL` | `https://<your-backend>.up.railway.app` |
+
+### 5. Generate public domains
+
+Each service → **Settings** → **Networking** → **Generate Domain**. You'll get URLs like:
+- `https://pawsed-backend.up.railway.app`
+- `https://pawsed-frontend.up.railway.app`
+
+Then go back to the **backend** service and add/update `CORS_ORIGINS` with your frontend domain.
 
 ---
 
