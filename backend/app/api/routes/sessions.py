@@ -9,7 +9,7 @@ import pickle
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session as DBSession
 
@@ -53,14 +53,84 @@ def _videos_dir() -> Path:
     return p
 
 
+def _run_processing(session_id: str, video_path: str, db_url: str) -> None:
+    """Background task: run full pipeline and update session status."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.db.models import Session as SessionModel
+
+    engine = create_engine(db_url, connect_args={"check_same_thread": False})
+    LocalSession = sessionmaker(bind=engine)
+    db = LocalSession()
+
+    def _set_failed(msg: str):
+        try:
+            s = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+            if s:
+                s.status = "failed"
+                s.analytics = {"error": msg}
+                db.commit()
+        except Exception:
+            pass
+        finally:
+            db.close()
+
+    try:
+        pipeline = Pipeline()
+        with ThreadPoolExecutor(max_workers=2) as tex:
+            vision_future = tex.submit(pipeline.process_video_parallel, video_path)
+            transcript_future = tex.submit(transcribe_video, video_path)
+            results, events, duration = vision_future.result()
+            transcript: list[dict] = transcript_future.result()
+        pipeline.close()
+    except Exception as e:
+        logging.error(f"Processing failed for {session_id}: {e}", exc_info=True)
+        _set_failed(str(e))
+        return
+
+    save_session_results(db, session_id, results, events, duration, transcript=transcript)
+
+    try:
+        with open(_results_path(session_id), "wb") as f:
+            pickle.dump(results, f)
+    except Exception as e:
+        logging.warning(f"Failed to save results pickle: {e}")
+
+    annotated_path = Path(video_path).parent / f"{session_id}_landmarks.mp4"
+    try:
+        render_annotated_video_from_results(video_path, str(annotated_path), results)
+    except Exception as e:
+        logging.warning(f"Overlay render failed: {e}", exc_info=True)
+
+    try:
+        session_dict = get_session(db, session_id)
+        session_data = SessionData(
+            session_id=session_id,
+            duration=session_dict["duration"],
+            events=[AnalyticsEvent(**e) for e in session_dict.get("events", [])],
+            engagement_states=[EngagementSegment(**s) for s in session_dict.get("engagement_states", [])],
+            transcript=[TranscriptSegment(**t) for t in transcript],
+        )
+        transcript_models = [TranscriptSegment(**t) for t in transcript]
+        scoring_result = run_section_scoring(session_data, transcript=transcript_models)
+        save_scoring(db, session_id, scoring_result.model_dump())
+        from app.api.routes.insights import _scoring_cache
+        _scoring_cache[session_id] = scoring_result
+    except Exception as e:
+        logging.warning(f"Section scoring pre-generation failed: {e}", exc_info=True)
+
+    db.close()
+
+
 @router.post("/analyze")
 async def analyze_video(
+    background_tasks: BackgroundTasks,
     file: UploadFile,
     mode: str = Query(default="mediapipe", pattern="^(mediapipe|ml-nn|ml-paranet|ml-rules)$"),
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    """Upload a video file and run the engagement analysis pipeline."""
+    """Upload a video file and immediately return a session_id. Processing runs in the background."""
     max_bytes = settings.max_upload_mb * 1024 * 1024
 
     allowed = {"video/mp4", "video/webm", "video/quicktime"}
@@ -83,58 +153,10 @@ async def analyze_video(
     video_path = _videos_dir() / f"{session_id}{suffix}"
     video_path.write_bytes(content)
 
-    try:
-        pipeline = Pipeline()
-        # Run vision pipeline and audio transcription concurrently
-        with ThreadPoolExecutor(max_workers=2) as tex:
-            vision_future = tex.submit(pipeline.process_video_parallel, str(video_path))
-            transcript_future = tex.submit(transcribe_video, str(video_path))
-            results, events, duration = vision_future.result()
-            transcript: list[dict] = transcript_future.result()
-        pipeline.close()
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error": {"code": "PROCESSING_ERROR", "message": str(e)}},
-        )
+    from app.db.database import engine as _engine
+    background_tasks.add_task(_run_processing, session_id, str(video_path), str(_engine.url))
 
-    save_session_results(db, session_id, results, events, duration, transcript=transcript)
-
-    # Persist results to disk so the overlay can be regenerated later
-    try:
-        with open(_results_path(session_id), "wb") as f:
-            pickle.dump(results, f)
-    except Exception as e:
-        logging.warning(f"Failed to save results pickle: {e}")
-
-    # Render overlay synchronously — ~8s with pre-computed face_data
-    annotated_path = _videos_dir() / f"{session_id}_landmarks.mp4"
-    try:
-        render_annotated_video_from_results(str(video_path), str(annotated_path), results)
-    except Exception as e:
-        logging.warning(f"Overlay render failed: {e}", exc_info=True)
-
-    # Pre-generate section scoring so insights tab is instant on first open
-    try:
-        session_dict = get_session(db, session_id)
-        session_data = SessionData(
-            session_id=session_id,
-            duration=session_dict["duration"],
-            events=[AnalyticsEvent(**e) for e in session_dict.get("events", [])],
-            engagement_states=[EngagementSegment(**s) for s in session_dict.get("engagement_states", [])],
-            transcript=[TranscriptSegment(**t) for t in transcript],
-        )
-        transcript_models = [TranscriptSegment(**t) for t in transcript]
-        scoring_result = run_section_scoring(session_data, transcript=transcript_models)
-        save_scoring(db, session_id, scoring_result.model_dump())
-
-        # Also warm the in-process insights cache so the first request is instant
-        from app.api.routes.insights import _scoring_cache
-        _scoring_cache[session_id] = scoring_result
-    except Exception as e:
-        logging.warning(f"Section scoring pre-generation failed: {e}", exc_info=True)
-
-    return {"data": {"session_id": session_id, "status": "done"}}
+    return {"data": {"session_id": session_id, "status": "processing"}}
 
 
 @router.get("/session/{session_id}")

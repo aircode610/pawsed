@@ -4,7 +4,7 @@ import { Upload, FileVideo, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { analyzeVideo } from "@/lib/api";
+import { analyzeVideo, getSession } from "@/lib/api";
 
 const ACCEPTED_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
 const MAX_SIZE = 300 * 1024 * 1024; // 300MB
@@ -22,6 +22,7 @@ const UploadPage = () => {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeStatus, setAnalyzeStatus] = useState<string>("Uploading...");
   const [error, setError] = useState<string | null>(null);
 
   const handleFile = useCallback((f: File) => {
@@ -58,9 +59,23 @@ const UploadPage = () => {
   const handleAnalyze = async () => {
     if (!file) return;
     setAnalyzing(true);
+    setAnalyzeStatus("Uploading...");
     try {
       const { session_id } = await analyzeVideo(file);
-      navigate(`/session/${session_id}/timeline`);
+      setAnalyzeStatus("Analyzing engagement...");
+
+      // Poll until processing is done
+      while (true) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const session = await getSession(session_id);
+        if (session.status === "done") {
+          navigate(`/session/${session_id}/timeline`);
+          return;
+        }
+        if (session.status === "failed") {
+          throw new Error(session.analytics?.error || "Processing failed on the server.");
+        }
+      }
     } catch (err) {
       toast({
         title: "Analysis failed",
@@ -180,7 +195,7 @@ const UploadPage = () => {
                     <div className="h-full bg-primary animate-indeterminate rounded-full" />
                   </div>
                   <p className="text-xs text-muted-foreground text-center animate-pulse">
-                    Analyzing student engagement...
+                    {analyzeStatus}
                   </p>
                 </div>
               ) : (
