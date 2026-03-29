@@ -70,7 +70,7 @@ async def analyze_video(
 
     try:
         pipeline = Pipeline()
-        results, events, duration = pipeline.process_video(str(video_path))
+        results, events, duration = pipeline.process_video_parallel(str(video_path))
         save_session_results(db, session_id, results, events, duration)
 
         annotated_path = _videos_dir() / f"{session_id}_landmarks.mp4"
