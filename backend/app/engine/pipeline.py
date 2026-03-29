@@ -77,6 +77,8 @@ class Pipeline:
                 "ear_open": cfg.ear_open,
                 "gaze_passive": cfg.gaze_passive,
                 "head_pitch_disengaged": cfg.head_pitch_disengaged,
+                "drowsiness_disengaged": cfg.drowsiness_disengaged,
+                "head_motion_distracted": cfg.head_motion_distracted,
             }
         )
 
@@ -179,12 +181,13 @@ class Pipeline:
             features = extractor.extract(face_data, timestamp)
 
             # L3: Classification
-            state, _confidence = classifier.classify(features)
+            state, confidence = classifier.classify(features)
 
             face_results.append(FaceResult(
                 face_id=face_id,
                 features=features,
                 state=state,
+                confidence=confidence,
                 face_detected=True,
                 centroid_x=cx,
                 centroid_y=cy,

@@ -186,6 +186,7 @@ def render_annotated_video(
                 feat_text = [
                     f"Face {face_id} | EAR:{features.ear_avg:.2f} MAR:{features.mar:.2f}",
                     f"Gaze:{features.gaze_score:.2f} Yaw:{features.head_yaw:.0f} [{confidence:.0%}]",
+                    f"Blink:{features.blink_rate:.0f}/m Drowsy:{features.drowsiness:.2f} Motion:{features.head_motion:.1f}",
                 ]
                 last_faces.append((face_data, state, feat_text))
 

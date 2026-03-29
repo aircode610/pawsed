@@ -7,7 +7,6 @@ import { SessionSubNav } from "@/components/SessionSubNav";
 import { TeachingCoachChat } from "@/components/TeachingCoachChat";
 import { useSessionData } from "@/hooks/use-session-data";
 import { getSectionScoring } from "@/lib/api";
-import { mockSectionScoring } from "@/lib/mock-data";
 import type { SectionScoringData } from "@/lib/types";
 
 const fmt = (s: number) => {
@@ -25,24 +24,31 @@ const scoreColor = (pct: number) => {
 const AICoachPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { data: session, isUsingMock: sessionMock } = useSessionData(id);
+  const { data: session } = useSessionData(id);
   const [scoring, setScoring] = useState<SectionScoringData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isUsingMock, setIsUsingMock] = useState(false);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     getSectionScoring(id)
-      .then((data) => {
-        setScoring(data);
-        setIsUsingMock(false);
-      })
-      .catch(() => {
-        setScoring(mockSectionScoring as any);
-        setIsUsingMock(true);
-      })
+      .then((data) => setScoring(data))
+      .catch(() => setError(true))
       .finally(() => setIsLoading(false));
   }, [id]);
+
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <SessionSubNav />
+        <Card className="bg-card border-border p-8 text-center">
+          <AlertCircle className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
+          <p className="text-muted-foreground">Could not generate AI insights. Make sure ANTHROPIC_API_KEY is set.</p>
+        </Card>
+        <TeachingCoachChat sessionId={id} />
+      </div>
+    );
+  }
 
   if (isLoading || !scoring) {
     return (
@@ -60,13 +66,6 @@ const AICoachPage = () => {
   return (
     <div className="space-y-4">
       <SessionSubNav />
-
-      {(isUsingMock || sessionMock) && (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          {isUsingMock ? "Using demo insights — AI analysis unavailable" : "Using demo data — backend not connected"}
-        </div>
-      )}
 
       {/* Overall Summary */}
       <Card className="bg-card border-border border-l-[3px] border-l-primary p-6 space-y-3">

@@ -44,5 +44,6 @@ data/
 htmlcov/
 .pytest_cache/
 
-# Sessions
+# Sessions & Database
 backend/sessions/
+backend/pawsed.db

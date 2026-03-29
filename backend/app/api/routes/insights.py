@@ -1,23 +1,26 @@
 """REST API routes for AI insights — section scoring + teaching coach chat."""
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy.orm import Session as DBSession
 
+from app.analytics.section_scoring import run_section_scoring
+from app.analytics.teaching_coach import chat_with_coach
+from app.core.auth import get_current_user
+from app.db.database import get_db
+from app.db.models import User
 from app.models.analytics import (
     EngagementSegment,
     Event,
-    SessionData,
     SectionScoringResult,
+    SessionData,
 )
-from app.analytics.section_scoring import run_section_scoring
-from app.analytics.teaching_coach import chat_with_coach
 from app.storage.sessions import get_session
 
 router = APIRouter()
 
 
 def _session_to_analytics_model(session: dict) -> SessionData:
-    """Convert stored session JSON to the SessionData Pydantic model."""
     return SessionData(
         session_id=session["session_id"],
         duration=session["duration"],
@@ -28,17 +31,20 @@ def _session_to_analytics_model(session: dict) -> SessionData:
     )
 
 
-# Cache section scoring results in memory (session_id → result)
 _scoring_cache: dict[str, SectionScoringResult] = {}
 
 
 @router.get("/session/{session_id}/insights/sections")
-async def get_section_scoring(session_id: str):
+async def get_section_scoring(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
     """Return section-by-section lecture scoring with AI teaching notes."""
     if session_id in _scoring_cache:
         return {"data": _scoring_cache[session_id].model_dump()}
 
-    session = get_session(session_id)
+    session = get_session(db, session_id, user_id=user.id)
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -62,9 +68,14 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/session/{session_id}/insights/chat")
-async def teaching_coach_chat(session_id: str, body: ChatRequest):
+async def teaching_coach_chat(
+    session_id: str,
+    body: ChatRequest,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
     """Send a message to the teaching coach and get a response."""
-    session = get_session(session_id)
+    session = get_session(db, session_id, user_id=user.id)
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -73,8 +84,6 @@ async def teaching_coach_chat(session_id: str, body: ChatRequest):
 
     try:
         session_data = _session_to_analytics_model(session)
-
-        # Include section scoring if already cached
         section_scoring = _scoring_cache.get(session_id)
 
         response = chat_with_coach(

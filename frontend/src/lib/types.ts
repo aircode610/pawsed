@@ -75,9 +75,4 @@ export interface ChatMessage {
   content: string;
 }
 
-// Legacy compat — kept for any code still referencing InsightData
-export interface InsightData {
-  session_id: string;
-  recommendations: string[];
-  summary: string;
-}
+export type EventType = "yawn" | "looked_away" | "looked_down" | "eyes_closed" | "drowsy" | "distracted" | "zoned_out" | "face_lost";

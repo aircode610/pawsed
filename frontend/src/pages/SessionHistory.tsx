@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getSessions } from "@/lib/api";
-import { mockSessionList } from "@/lib/mock-data";
 import type { SessionSummary } from "@/lib/types";
 
 type SortKey = "date" | "focus";
@@ -32,18 +31,11 @@ const SessionHistoryPage = () => {
   const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isUsingMock, setIsUsingMock] = useState(false);
 
   useEffect(() => {
     getSessions()
-      .then((data) => {
-        setSessions(data.length > 0 ? data : mockSessionList as any);
-        setIsUsingMock(data.length === 0);
-      })
-      .catch(() => {
-        setSessions(mockSessionList as any);
-        setIsUsingMock(true);
-      })
+      .then((data) => setSessions(data))
+      .catch(() => setSessions([]))
       .finally(() => setIsLoading(false));
   }, []);
 
@@ -98,13 +90,6 @@ const SessionHistoryPage = () => {
           {sortBy === "date" ? "Date" : "Focus Score"}
         </Button>
       </div>
-
-      {isUsingMock && (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          Using demo data — backend not connected
-        </div>
-      )}
 
       {sorted.length === 0 && (
         <Card className="bg-card border-border p-8 text-center">

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, DragEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload, Video, FileVideo, X } from "lucide-react";
+import { Upload, FileVideo, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -77,17 +77,16 @@ const UploadPage = () => {
       {/* Header */}
       <div className="text-center mb-10 max-w-xl">
         <h1 className="text-3xl font-bold text-foreground mb-2">
-          Analyze Your Focus
+          Analyze Class Engagement
         </h1>
         <p className="text-muted-foreground">
-          Upload a lecture recording or start a live session to understand your
-          engagement patterns
+          Upload a lecture recording to analyze your students' engagement
+          patterns
         </p>
       </div>
 
-      {/* Cards */}
-      <div className="grid md:grid-cols-2 gap-6 w-full max-w-3xl">
-        {/* Upload Card */}
+      {/* Upload Card */}
+      <div className="w-full max-w-lg">
         <Card className="bg-card border-border p-6 flex flex-col">
           <h2 className="text-lg font-semibold text-foreground mb-4">
             Upload Video
@@ -182,7 +181,7 @@ const UploadPage = () => {
                     <div className="h-full bg-primary animate-indeterminate rounded-full" />
                   </div>
                   <p className="text-xs text-muted-foreground text-center animate-pulse">
-                    Analyzing engagement patterns...
+                    Analyzing student engagement...
                   </p>
                 </div>
               ) : (
@@ -192,24 +191,6 @@ const UploadPage = () => {
               )}
             </div>
           )}
-        </Card>
-
-        {/* Live Session Card */}
-        <Card className="bg-card border-border p-6 flex flex-col items-center justify-center text-center gap-4">
-          <Video className="h-12 w-12 text-engage-engaged" />
-          <h2 className="text-lg font-semibold text-foreground">
-            Start Live Session
-          </h2>
-          <p className="text-sm text-muted-foreground max-w-xs">
-            Use your webcam to track engagement in real-time
-          </p>
-          <Button
-            variant="outline"
-            className="border-engage-engaged text-engage-engaged hover:bg-engage-engaged/10"
-            onClick={() => navigate("/live")}
-          >
-            Start Session
-          </Button>
         </Card>
       </div>
     </div>

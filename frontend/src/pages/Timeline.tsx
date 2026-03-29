@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { Play, Eye, Moon, CircleDot, ArrowLeft, ArrowRight, ArrowDown, AlertCircle, Scan } from "lucide-react";
+import { Play, Eye, Moon, CircleDot, ArrowLeft, ArrowRight, ArrowDown, AlertCircle, Scan, Zap, BedDouble } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/tooltip";
 import { SessionSubNav } from "@/components/SessionSubNav";
 import { useSessionData } from "@/hooks/use-session-data";
-import type { EventType } from "@/lib/mock-data";
+import { getToken } from "@/lib/api";
+import type { EventType } from "@/lib/types";
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -36,6 +37,10 @@ function EventIcon({ type, direction }: { type: EventType; direction?: string })
       return direction === "right" ? <ArrowRight className={cls} /> : <ArrowLeft className={cls} />;
     case "looked_down":
       return <ArrowDown className={cls} />;
+    case "drowsy":
+      return <BedDouble className={cls} />;
+    case "distracted":
+      return <Zap className={cls} />;
     case "zoned_out":
       return <Moon className={cls} />;
     default:
@@ -51,7 +56,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const TimelinePage = () => {
   const { id } = useParams();
-  const { data: session, isLoading, isUsingMock } = useSessionData(id);
+  const { data: session, isLoading, isError } = useSessionData(id);
   const [currentTime, setCurrentTime] = useState(0);
   const timelineRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -59,8 +64,9 @@ const TimelinePage = () => {
   const [showLandmarks, setShowLandmarks] = useState(false);
   const { duration, analytics, events, engagement_states } = session;
 
-  const videoUrl = id
-    ? `${API_BASE}/session/${id}/video${showLandmarks ? "?landmarks=true" : ""}`
+  const token = getToken();
+  const videoUrl = id && token
+    ? `${API_BASE}/session/${id}/video?token=${encodeURIComponent(token)}${showLandmarks ? "&landmarks=true" : ""}`
     : "";
 
   // Sync video playback position → currentTime state using rAF for smooth updates
@@ -121,10 +127,10 @@ const TimelinePage = () => {
     <div className="space-y-4">
       <SessionSubNav />
 
-      {isUsingMock && (
+      {isError && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          Using demo data — backend not connected
+          Could not load session data
         </div>
       )}
 
@@ -171,7 +177,7 @@ const TimelinePage = () => {
               <div className="text-center text-muted-foreground">
                 <Play className="h-12 w-12 mx-auto mb-2 opacity-40" />
                 <p className="text-sm">
-                  {isUsingMock ? "Video not available in demo mode" : "Video not available"}
+                  Video not available
                 </p>
               </div>
             </div>
@@ -286,13 +292,20 @@ const TimelinePage = () => {
       {/* Event List */}
       <Card className="bg-card border-border overflow-hidden">
         <div className="px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-medium text-foreground">Events</h3>
+          <h3 className="text-sm font-medium text-foreground">Distraction Events</h3>
+        </div>
+        {/* Column headers */}
+        <div className="flex items-center gap-4 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground/60 border-b border-border">
+          <span className="w-12">Time</span>
+          <span className="flex-1">Event</span>
+          <span className="w-14 text-right">Duration</span>
+          <span className="w-16 text-right">Confidence</span>
         </div>
         <div className="divide-y divide-border max-h-80 overflow-y-auto">
           {events.map((ev, i) => {
             const isActive = i === activeEventIdx;
             const dotColor =
-              ev.event_type === "looked_away" || ev.event_type === "zoned_out"
+              ev.event_type === "looked_away" || ev.event_type === "zoned_out" || ev.event_type === "distracted"
                 ? "bg-engage-passive"
                 : "bg-engage-disengaged";
             return (
@@ -313,9 +326,9 @@ const TimelinePage = () => {
                   </span>
                 </span>
                 <span className="text-muted-foreground w-14 text-right">
-                  {ev.duration}s
+                  {ev.duration.toFixed(1)}s
                 </span>
-                <span className="text-muted-foreground w-12 text-right">
+                <span className="text-muted-foreground w-16 text-right">
                   {Math.round(ev.confidence * 100)}%
                 </span>
               </button>
