@@ -23,6 +23,16 @@ EVENT_DISTRACTED = "distracted"
 EVENT_ZONED_OUT = "zoned_out"
 EVENT_FACE_LOST = "face_lost"
 
+# Prolonged inactivity: head motion below INACTIVITY_MOTION_THRESHOLD
+# AND expression variance below INACTIVITY_EXPRESSION_THRESHOLD for at
+# least INACTIVITY_DURATION_THRESHOLD seconds.
+# Represents a student who is sitting still but not paying attention —
+# blank stare, minimal movement, not reacting to lecture content.
+EVENT_PROLONGED_INACTIVITY = "prolonged_inactivity"
+INACTIVITY_MOTION_THRESHOLD = 0.3       # head_motion units/s — below = unnaturally still
+INACTIVITY_EXPRESSION_THRESHOLD = 0.01  # expression_variance — below = frozen face
+INACTIVITY_DURATION_THRESHOLD = 5.0    # seconds sustained before event fires
+
 
 @dataclass
 class Event:
@@ -77,6 +87,9 @@ class EventLogger:
         self._distraction_metadata: dict = {}
         self._last_partial_emit: float = 0.0
 
+        # Prolonged inactivity tracker (fires even when state is ENGAGED)
+        self._inactivity_since: float | None = None
+
     @property
     def events(self) -> list[Event]:
         return list(self._events)
@@ -84,11 +97,19 @@ class EventLogger:
     def process(self, result: FrameResult) -> Event | None:
         """Process one frame. Returns a completed Event if one just ended, else None."""
         if not result.face_detected:
+            self._inactivity_since = None
             return self._handle_distraction(
                 result.timestamp, EVENT_FACE_LOST, 0.95, {}
             )
 
+        # Track prolonged inactivity independently of engagement state.
+        # Fires as a standalone event even when the student is "engaged" —
+        # a blank stare with no movement is detectable even without a hard
+        # disengagement trigger.
+        inactivity_event = self._check_prolonged_inactivity(result)
+
         if result.state == EngagementState.DISENGAGED:
+            self._inactivity_since = None   # disengagement takes precedence
             event_type = _classify_event_type(result.features, self._thresholds)
             # Use actual classifier confidence from the worst face
             confidence = 0.5
@@ -114,7 +135,49 @@ class EventLogger:
                 metadata,
             )
         else:
-            return self._handle_engagement(result.timestamp)
+            engagement_event = self._handle_engagement(result.timestamp)
+            # Return whichever event fired (prolonged inactivity preferred if
+            # no engagement transition happened this frame)
+            return engagement_event or inactivity_event
+
+    def _check_prolonged_inactivity(self, result: FrameResult) -> Event | None:
+        """Emit a prolonged_inactivity event when the student has been physically
+        still (low head motion + frozen face) for INACTIVITY_DURATION_THRESHOLD
+        seconds, regardless of their engagement state.
+
+        Criterion:
+          head_motion < 0.3 units/s  AND  expression_variance < 0.01  for ≥ 5s
+        """
+        fv = result.features
+        is_inactive = (
+            fv.head_motion < INACTIVITY_MOTION_THRESHOLD
+            and fv.expression_variance < INACTIVITY_EXPRESSION_THRESHOLD
+        )
+
+        if is_inactive:
+            if self._inactivity_since is None:
+                self._inactivity_since = result.timestamp
+            elapsed = result.timestamp - self._inactivity_since
+            if elapsed >= INACTIVITY_DURATION_THRESHOLD:
+                # Fire event and reset so we don't spam
+                event = Event(
+                    timestamp=self._inactivity_since,
+                    event_type=EVENT_PROLONGED_INACTIVITY,
+                    duration=round(elapsed, 3),
+                    confidence=0.75,
+                    metadata={
+                        "head_motion": round(fv.head_motion, 3),
+                        "expression_variance": round(fv.expression_variance, 4),
+                    },
+                    severity="significant" if elapsed >= SIGNIFICANT_THRESHOLD else "brief",
+                )
+                self._events.append(event)
+                self._inactivity_since = result.timestamp  # reset for next occurrence
+                return event
+        else:
+            self._inactivity_since = None
+
+        return None
 
     def _handle_distraction(
         self,
@@ -178,6 +241,7 @@ class EventLogger:
         self._distraction_confidence = 0.0
         self._distraction_metadata = {}
         self._last_partial_emit = 0.0
+        self._inactivity_since = None
 
 
 def compute_engagement_states(results: list[FrameResult]) -> list[dict]:

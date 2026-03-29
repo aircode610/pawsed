@@ -99,6 +99,8 @@ class Session(Base):
             "has_landmarks": lm_path.exists() or pkl_path.exists(),
             "scoring_ready": self.scoring_json is not None,
             "transcript": self.transcript,
+            # Binary high/low label as required by the evaluation spec
+            "engagement_level": "high" if self.analytics.get("focus_time_pct", 0) >= 60 else "low",
         }
 
     def to_summary(self) -> dict:
