@@ -4,7 +4,6 @@ import { BookOpen, TrendingUp, TrendingDown, Target, Clock, AlertTriangle, Troph
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getSessions } from "@/lib/api";
-import { mockSessionList } from "@/lib/mock-data";
 import type { SessionSummary } from "@/lib/types";
 
 function fmtDate(iso: string) {
@@ -23,8 +22,8 @@ const ProfilePage = () => {
 
   useEffect(() => {
     getSessions()
-      .then((data) => setSessions(data.length > 0 ? data : mockSessionList as any))
-      .catch(() => setSessions(mockSessionList as any))
+      .then((data) => setSessions(data))
+      .catch(() => setSessions([]))
       .finally(() => setIsLoading(false));
   }, []);
 

@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/tooltip";
 import { SessionSubNav } from "@/components/SessionSubNav";
 import { useSessionData } from "@/hooks/use-session-data";
-import type { EventType } from "@/lib/mock-data";
+import { getToken } from "@/lib/api";
+import type { EventType } from "@/lib/types";
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -55,7 +56,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const TimelinePage = () => {
   const { id } = useParams();
-  const { data: session, isLoading, isUsingMock } = useSessionData(id);
+  const { data: session, isLoading, isError } = useSessionData(id);
   const [currentTime, setCurrentTime] = useState(0);
   const timelineRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -63,8 +64,9 @@ const TimelinePage = () => {
   const [showLandmarks, setShowLandmarks] = useState(false);
   const { duration, analytics, events, engagement_states } = session;
 
-  const videoUrl = id
-    ? `${API_BASE}/session/${id}/video${showLandmarks ? "?landmarks=true" : ""}`
+  const token = getToken();
+  const videoUrl = id && token
+    ? `${API_BASE}/session/${id}/video?token=${encodeURIComponent(token)}${showLandmarks ? "&landmarks=true" : ""}`
     : "";
 
   // Sync video playback position → currentTime state using rAF for smooth updates
@@ -125,10 +127,10 @@ const TimelinePage = () => {
     <div className="space-y-4">
       <SessionSubNav />
 
-      {isUsingMock && (
+      {isError && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          Using demo data — backend not connected
+          Could not load session data
         </div>
       )}
 
@@ -175,7 +177,7 @@ const TimelinePage = () => {
               <div className="text-center text-muted-foreground">
                 <Play className="h-12 w-12 mx-auto mb-2 opacity-40" />
                 <p className="text-sm">
-                  {isUsingMock ? "Video not available in demo mode" : "Video not available"}
+                  Video not available
                 </p>
               </div>
             </div>

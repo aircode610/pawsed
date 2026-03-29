@@ -8,18 +8,26 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
-    # Storage
-    sessions_dir: str = "sessions"          # directory for JSON session files
+    # Database
+    db_path: str = "pawsed.db"
+
+    # Storage (videos still on disk)
+    sessions_dir: str = "sessions"
 
     # MediaPipe
     model_path: str = "models/face_landmarker.task"
-    processing_fps: int = 10               # frames to sample per second from video
+    processing_fps: int = 10
 
     # Claude API
     anthropic_api_key: str = ""
 
     # Upload limits
     max_upload_mb: int = 300
+
+    # JWT Auth
+    jwt_secret: str = "pawsed-dev-secret-change-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_hours: int = 72  # 3 days
 
     class Config:
         env_file = ".env"

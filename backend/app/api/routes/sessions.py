@@ -1,22 +1,27 @@
 """REST API routes for session management.
 
-POST  /analyze            — upload video, run pipeline, return session_id
-GET   /session/{id}       — get full session data
-GET   /session/{id}/video — stream the original uploaded video
-GET   /sessions           — list all sessions
+All endpoints require authentication — each lecturer sees only their own sessions.
 """
 
 import os
-import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session as DBSession
 
+from app.core.auth import get_current_user, get_optional_user
 from app.core.config import settings
+from app.db.database import get_db
+from app.db.models import User
 from app.engine.overlay import render_annotated_video
 from app.engine.pipeline import Pipeline
-from app.storage.sessions import create_session, get_session, list_sessions, save_session_results
+from app.storage.sessions import (
+    create_session,
+    get_session,
+    list_sessions,
+    save_session_results,
+)
 
 router = APIRouter()
 
@@ -34,11 +39,15 @@ def _videos_dir() -> Path:
 
 
 @router.post("/analyze")
-async def analyze_video(file: UploadFile):
+async def analyze_video(
+    file: UploadFile,
+    mode: str = Query(default="mediapipe", pattern="^(mediapipe|ml-nn|ml-paranet|ml-rules)$"),
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
     """Upload a video file and run the engagement analysis pipeline."""
     max_bytes = settings.max_upload_mb * 1024 * 1024
 
-    # Validate file type
     allowed = {"video/mp4", "video/webm", "video/quicktime"}
     if file.content_type and file.content_type not in allowed:
         raise HTTPException(
@@ -46,7 +55,6 @@ async def analyze_video(file: UploadFile):
             detail={"error": {"code": "VALIDATION_ERROR", "message": "Unsupported file type. Use .mp4, .webm, or .mov"}},
         )
 
-    # Read and size-check
     content = await file.read()
     if len(content) > max_bytes:
         raise HTTPException(
@@ -54,10 +62,8 @@ async def analyze_video(file: UploadFile):
             detail={"error": {"code": "VALIDATION_ERROR", "message": f"File exceeds {settings.max_upload_mb}MB limit"}},
         )
 
-    # Create session record
-    session_id = create_session(file.filename or "upload")
+    session_id = create_session(db, user, file.filename or "upload")
 
-    # Save video permanently for playback
     suffix = os.path.splitext(file.filename or ".mp4")[1] or ".mp4"
     video_path = _videos_dir() / f"{session_id}{suffix}"
     video_path.write_bytes(content)
@@ -65,9 +71,8 @@ async def analyze_video(file: UploadFile):
     try:
         pipeline = Pipeline()
         results, events, duration = pipeline.process_video(str(video_path))
-        save_session_results(session_id, results, events, duration)
+        save_session_results(db, session_id, results, events, duration)
 
-        # Generate annotated video with landmarks overlay
         annotated_path = _videos_dir() / f"{session_id}_landmarks.mp4"
         try:
             render_annotated_video(str(video_path), str(annotated_path), pipeline)
@@ -85,26 +90,61 @@ async def analyze_video(file: UploadFile):
     return {"data": {"session_id": session_id, "status": "done"}}
 
 
+@router.get("/session/{session_id}")
+async def get_session_data(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """Return full session data including events and analytics."""
+    session = get_session(db, session_id, user_id=user.id)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "SESSION_NOT_FOUND", "message": f"No session found with ID {session_id}"}},
+        )
+    return {"data": session}
+
+
 @router.get("/session/{session_id}/video")
-async def get_session_video(session_id: str, landmarks: bool = False):
+async def get_session_video(
+    session_id: str,
+    landmarks: bool = False,
+    token: str | None = Query(default=None),
+    user: User | None = Depends(get_optional_user),
+    db: DBSession = Depends(get_db),
+):
     """Stream the uploaded video for a session.
 
-    Query params:
-        landmarks: if true, return the annotated version with face landmarks overlay.
+    Accepts auth via Bearer header OR ?token= query param (needed for <video> elements).
     """
+    # If no user from header, try the query param token
+    if user is None and token:
+        from jose import jwt as _jwt
+        try:
+            payload = _jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+            uid = int(payload["sub"])
+            user = db.query(User).filter(User.id == uid).first()
+        except Exception:
+            pass
+
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    session = get_session(db, session_id, user_id=user.id)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "SESSION_NOT_FOUND", "message": f"No session found with ID {session_id}"}},
+        )
+
     videos = _videos_dir()
 
-    # Try landmarks version first if requested
     if landmarks:
         lm_path = videos / f"{session_id}_landmarks.mp4"
         if lm_path.exists():
-            return FileResponse(
-                path=str(lm_path),
-                media_type="video/mp4",
-                filename=f"{session_id}_landmarks.mp4",
-            )
+            return FileResponse(path=str(lm_path), media_type="video/mp4", filename=f"{session_id}_landmarks.mp4")
 
-    # Original video (could be .mp4, .webm, .mov)
     for ext in (".mp4", ".webm", ".mov"):
         path = videos / f"{session_id}{ext}"
         if path.exists():
@@ -120,26 +160,16 @@ async def get_session_video(session_id: str, landmarks: bool = False):
     )
 
 
-@router.get("/session/{session_id}")
-async def get_session_data(session_id: str):
-    """Return full session data including events and analytics."""
-    session = get_session(session_id)
-    if session is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": {"code": "SESSION_NOT_FOUND", "message": f"No session found with ID {session_id}"}},
-        )
-    return {"data": session}
-
-
 @router.get("/sessions")
 async def list_all_sessions(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     sort: str = Query(default="date", pattern="^(date|score)$"),
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
 ):
-    """List all sessions with summary info."""
-    sessions, total = list_sessions(limit=limit, offset=offset, sort=sort)
+    """List all sessions for the authenticated lecturer."""
+    sessions, total = list_sessions(db, user_id=user.id, limit=limit, offset=offset, sort=sort)
     return {
         "data": sessions,
         "meta": {"total": total, "limit": limit, "offset": offset},

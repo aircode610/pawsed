@@ -1,22 +1,35 @@
 import { useQuery } from "@tanstack/react-query";
 import { getSession } from "@/lib/api";
-import { mockSession } from "@/lib/mock-data";
 import type { SessionData } from "@/lib/types";
+
+const EMPTY_SESSION: SessionData = {
+  session_id: "",
+  created_at: "",
+  duration: 0,
+  video_filename: "",
+  analytics: {
+    focus_time_pct: 0,
+    distraction_time_pct: 0,
+    longest_focus_streak: 0,
+    distraction_breakdown: {},
+    engagement_curve: [],
+    danger_zones: [],
+  },
+  events: [],
+  engagement_states: [],
+};
 
 export function useSessionData(id: string | undefined) {
   const query = useQuery<SessionData>({
     queryKey: ["session", id],
     queryFn: () => getSession(id!),
     enabled: !!id,
-    retry: false,
+    retry: 1,
   });
 
-  const isUsingMock = query.isError || !id;
-  const data: SessionData = query.data ?? (mockSession as unknown as SessionData);
-
   return {
-    data,
-    isLoading: query.isLoading && !isUsingMock,
-    isUsingMock,
+    data: query.data ?? EMPTY_SESSION,
+    isLoading: query.isLoading,
+    isError: query.isError,
   };
 }

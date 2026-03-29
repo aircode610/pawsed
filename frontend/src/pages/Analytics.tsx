@@ -25,7 +25,7 @@ const STATE_COLORS: Record<string, string> = {
 
 const AnalyticsPage = () => {
   const { id } = useParams();
-  const { data: session, isLoading, isUsingMock } = useSessionData(id);
+  const { data: session, isLoading } = useSessionData(id);
   const { analytics, engagement_states, duration } = session;
   const focusPct = analytics.focus_time_pct;
 
@@ -79,13 +79,6 @@ const AnalyticsPage = () => {
   return (
     <div className="space-y-4">
       <SessionSubNav />
-
-      {isUsingMock && (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          Using demo data — backend not connected
-        </div>
-      )}
 
       {/* Headline */}
       <Card className="bg-card border-border p-6 text-center">
