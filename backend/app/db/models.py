@@ -65,6 +65,10 @@ class Session(Base):
 
     def to_dict(self) -> dict:
         """Convert to API response format."""
+        from pathlib import Path
+        from app.core.config import settings
+        lm_path = Path(settings.sessions_dir) / "videos" / f"{self.session_id}_landmarks.mp4"
+        pkl_path = Path(settings.sessions_dir) / "results" / f"{self.session_id}_results.pkl"
         return {
             "session_id": self.session_id,
             "created_at": self.created_at.isoformat() if self.created_at else "",
@@ -74,6 +78,7 @@ class Session(Base):
             "analytics": self.analytics,
             "events": self.events,
             "engagement_states": self.engagement_states,
+            "has_landmarks": lm_path.exists() or pkl_path.exists(),
         }
 
     def to_summary(self) -> dict:

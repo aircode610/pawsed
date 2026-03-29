@@ -62,12 +62,18 @@ const TimelinePage = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoError, setVideoError] = useState(false);
   const [showLandmarks, setShowLandmarks] = useState(false);
-  const { duration, analytics, events, engagement_states } = session;
+  const { duration, analytics, events, engagement_states, has_landmarks } = session;
 
   const token = getToken();
   const videoUrl = id && token
     ? `${API_BASE}/session/${id}/video?token=${encodeURIComponent(token)}${showLandmarks ? "&landmarks=true" : ""}`
     : "";
+
+  // Reset error state whenever the video URL changes (e.g. landmarks toggle)
+  // so a failed landmarks load doesn't permanently hide the original video.
+  useEffect(() => {
+    setVideoError(false);
+  }, [videoUrl]);
 
   // Sync video playback position → currentTime state using rAF for smooth updates
   useEffect(() => {
@@ -182,8 +188,8 @@ const TimelinePage = () => {
               </div>
             </div>
           )}
-          {/* Landmarks toggle */}
-          {!videoError && videoUrl && (
+          {/* Landmarks toggle — only shown when overlay is available */}
+          {!videoError && videoUrl && has_landmarks && (
             <Button
               variant={showLandmarks ? "default" : "secondary"}
               size="sm"

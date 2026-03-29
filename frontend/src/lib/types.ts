@@ -35,6 +35,7 @@ export interface SessionData {
   analytics: SessionAnalytics;
   events: SessionEvent[];
   engagement_states: EngagementSegment[];
+  has_landmarks: boolean;
 }
 
 export interface SessionSummary {

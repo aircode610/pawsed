@@ -99,6 +99,9 @@ class FaceResult:
     face_detected: bool = True
     centroid_x: float = 0.0  # Face center for tracking (normalized 0-1)
     centroid_y: float = 0.0
+    # Raw landmarks/blendshapes — populated during pipeline run, not persisted to DB.
+    # Used by the overlay renderer so it doesn't need to re-run MediaPipe.
+    face_data: "FaceData | None" = field(default=None, repr=False)
 
 
 class RiskLevel(str, Enum):

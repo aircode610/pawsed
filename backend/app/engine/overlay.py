@@ -128,12 +128,16 @@ def render_annotated_video(
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
+    # Write only at processing_fps — avoids writing 5-6× redundant frames for
+    # high-framerate source videos (e.g. 60fps source → write at 10fps = 6× fewer frames).
+    write_fps = float(settings.processing_fps)
+
     # Write to a temp file with mp4v codec, then re-encode to H.264 for browser playback
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".mp4")
     os.close(tmp_fd)
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(tmp_path, fourcc, fps, (w, h))
+    writer = cv2.VideoWriter(tmp_path, fourcc, write_fps, (w, h))
 
     # Create fresh detector and per-face pipelines
     from app.engine.features import FeatureExtractor
@@ -197,20 +201,20 @@ def render_annotated_video(
             else:
                 last_risk_text = ""
 
-        # Draw all faces
-        frame_out = frame_bgr.copy()
-        for face_data, state, feat_text in last_faces:
-            draw_landmarks_on_frame(frame_out, face_data, state, feat_text)
+        # Only write sampled frames — matches the write_fps set on the VideoWriter
+        if frame_idx % sample_every == 0:
+            frame_out = frame_bgr.copy()
+            for face_data, state, feat_text in last_faces:
+                draw_landmarks_on_frame(frame_out, face_data, state, feat_text)
 
-        # Draw classroom risk text at top-center
-        if last_risk_text:
-            cv2.putText(
-                frame_out, last_risk_text,
-                (w // 2 - 200, 25),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1, cv2.LINE_AA,
-            )
+            if last_risk_text:
+                cv2.putText(
+                    frame_out, last_risk_text,
+                    (w // 2 - 200, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1, cv2.LINE_AA,
+                )
 
-        writer.write(frame_out)
+            writer.write(frame_out)
         frame_idx += 1
 
     cap.release()
@@ -218,6 +222,126 @@ def render_annotated_video(
     detector.close()
 
     # Re-encode to H.264 for browser compatibility
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", tmp_path,
+                "-c:v", "libx264", "-preset", "fast",
+                "-crf", "23", "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart",
+                output_path,
+            ],
+            capture_output=True,
+            check=True,
+        )
+    finally:
+        os.unlink(tmp_path)
+
+
+def render_annotated_video_from_results(
+    input_path: str,
+    output_path: str,
+    results: list,
+) -> None:
+    """Render the landmarks overlay using pre-computed pipeline results.
+
+    Unlike render_annotated_video, this function does NOT re-run MediaPipe.
+    It reads face_data stored in FaceResult (populated during the pipeline run)
+    and draws directly from that. Only sampled frames are written (at
+    processing_fps), so the output video is much smaller and renders faster.
+
+    Args:
+        input_path: Path to the original video.
+        output_path: Path to write the annotated video.
+        results: list[FrameResult] with face_data populated (from process_video_parallel).
+    """
+    from app.core.config import settings
+
+    # Build a fast timestamp → FrameResult lookup
+    result_map: dict[int, object] = {}
+    for r in results:
+        key = int(round(r.timestamp * 1000))
+        result_map[key] = r
+
+    # Sort timestamps for nearest-frame lookup
+    sorted_ts = sorted(result_map.keys())
+
+    def _nearest_result(ts_ms: int):
+        if not sorted_ts:
+            return None
+        lo, hi = 0, len(sorted_ts) - 1
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if sorted_ts[mid] < ts_ms:
+                lo = mid + 1
+            else:
+                hi = mid
+        # Pick closest between lo-1 and lo
+        if lo > 0 and abs(sorted_ts[lo - 1] - ts_ms) < abs(sorted_ts[lo] - ts_ms):
+            lo -= 1
+        return result_map[sorted_ts[lo]]
+
+    cap = cv2.VideoCapture(input_path)
+    if not cap.isOpened():
+        raise ValueError(f"Cannot open video: {input_path}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    write_fps = float(settings.processing_fps)
+    sample_every = max(1, int(fps / write_fps))
+
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".mp4")
+    os.close(tmp_fd)
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(tmp_path, fourcc, write_fps, (w, h))
+
+    frame_idx = 0
+    while True:
+        ret, frame_bgr = cap.read()
+        if not ret:
+            break
+
+        if frame_idx % sample_every == 0:
+            ts_ms = int(frame_idx / fps * 1000)
+            frame_result = _nearest_result(ts_ms)
+
+            frame_out = frame_bgr.copy()
+            if frame_result is not None and frame_result.faces:
+                disengaged_count = 0
+                for face_res in frame_result.faces:
+                    draw_landmarks_on_frame(
+                        frame_out,
+                        face_res.face_data,
+                        face_res.state,
+                        features_text=[
+                            f"Face {face_res.face_id} | EAR:{face_res.features.ear_avg:.2f} MAR:{face_res.features.mar:.2f}",
+                            f"Gaze:{face_res.features.gaze_score:.2f} Yaw:{face_res.features.head_yaw:.0f} [{face_res.confidence:.0%}]",
+                            f"Blink:{face_res.features.blink_rate:.0f}/m Drowsy:{face_res.features.drowsiness:.2f}",
+                        ],
+                    )
+                    if face_res.state == EngagementState.DISENGAGED:
+                        disengaged_count += 1
+
+                total = frame_result.total_faces
+                if total > 0:
+                    pct = disengaged_count / total * 100
+                    risk_text = f"Classroom: {total} faces | {disengaged_count} disengaged ({pct:.0f}%)"
+                    cv2.putText(frame_out, risk_text, (w // 2 - 200, 25),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1, cv2.LINE_AA)
+            else:
+                cv2.rectangle(frame_out, (0, 0), (w - 1, h - 1), (100, 100, 100), 3)
+                cv2.putText(frame_out, "No face detected", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
+
+            writer.write(frame_out)
+
+        frame_idx += 1
+
+    cap.release()
+    writer.release()
+
     try:
         subprocess.run(
             [

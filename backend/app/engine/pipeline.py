@@ -5,6 +5,8 @@ tracks them across frames with stable IDs, and computes classroom-level
 risk based on how many students are disengaged simultaneously.
 """
 
+import os
+
 from app.analytics.events import Event, EventLogger
 from app.engine.classifier import ClassifierConfig, EngagementClassifier
 from app.engine.detection import DetectionEngine
@@ -17,6 +19,58 @@ from app.models.schemas import (
     FrameResult,
     RiskLevel,
 )
+
+
+def _process_chunk_worker(
+    args: tuple,
+) -> tuple[list[FrameResult], list[Event]]:
+    """Top-level worker function for parallel video processing.
+
+    Processes a contiguous range of frames [start_frame, end_frame) from
+    a video file. Each worker creates its own Pipeline so MediaPipe state
+    is fully isolated. Seeks once to start_frame then reads sequentially
+    (one seek per chunk is fine; per-frame seeking would be slow for H.264).
+
+    Args:
+        args: (video_path, start_frame, end_frame, fps, processing_fps,
+               model_path, config)
+    """
+    import cv2
+
+    video_path, start_frame, end_frame, fps, processing_fps, model_path, config = args
+
+    pipeline = Pipeline(config=config, model_path=model_path)
+    detector = pipeline._get_detector(running_mode="VIDEO")
+
+    cap = cv2.VideoCapture(video_path)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
+    sample_every = max(1, int(fps / processing_fps))
+    results: list[FrameResult] = []
+    frame_idx = start_frame
+
+    while frame_idx < end_frame:
+        ret, frame_bgr = cap.read()
+        if not ret:
+            break
+        # Sample relative to chunk start so the first frame of every chunk
+        # is always processed regardless of global frame offset.
+        if (frame_idx - start_frame) % sample_every == 0:
+            timestamp = frame_idx / fps
+            timestamp_ms = int(timestamp * 1000)
+            result = pipeline._process_frame_multi(frame_bgr, timestamp, timestamp_ms, detector)
+            results.append(result)
+            pipeline.event_logger.process(result)
+        frame_idx += 1
+
+    cap.release()
+
+    chunk_end_time = end_frame / fps
+    pipeline.event_logger.flush(chunk_end_time)
+    events = pipeline.event_logger.events
+    pipeline.close()
+
+    return results, events
 
 
 def _compute_risk_level(disengaged_pct: float, total_faces: int) -> RiskLevel:
@@ -138,6 +192,68 @@ class Pipeline:
 
         return results, events, duration
 
+    def process_video_parallel(
+        self,
+        video_path: str,
+        workers: int | None = None,
+    ) -> tuple[list[FrameResult], list[Event], float]:
+        """Process a video file using parallel workers — one per CPU chunk.
+
+        Splits the video into equal frame ranges and processes each chunk in
+        a separate process. Roughly N× faster than process_video() on N cores.
+        Each worker owns its own Pipeline + MediaPipe detector so there is no
+        shared state. Events at chunk boundaries may be slightly shorter than
+        reality (an ongoing distraction at the boundary is closed with the
+        chunk's end timestamp), but this is imperceptible for lecture videos.
+
+        Args:
+            video_path: Path to the video file.
+            workers: Number of parallel processes. Defaults to half the CPU
+                count (capped at 8) to leave headroom for MediaPipe's internal
+                threading.
+        """
+        import cv2
+        from concurrent.futures import ProcessPoolExecutor
+        from app.core.config import settings
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise ValueError(f"Cannot open video: {video_path}")
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps
+        cap.release()
+
+        if workers is None:
+            workers = min(max(1, (os.cpu_count() or 4) - 2), 8)
+
+        # Build frame ranges — last chunk absorbs any remainder
+        chunk_size = total_frames // workers
+        ranges: list[tuple[int, int]] = []
+        for i in range(workers):
+            start = i * chunk_size
+            end = total_frames if i == workers - 1 else (i + 1) * chunk_size
+            ranges.append((start, end))
+
+        chunk_args = [
+            (video_path, start, end, fps, settings.processing_fps, self._model_path, self._config)
+            for start, end in ranges
+        ]
+
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            chunk_outputs = list(executor.map(_process_chunk_worker, chunk_args))
+
+        # Merge — chunks are already time-ordered so extend in order
+        all_results: list[FrameResult] = []
+        all_events: list[Event] = []
+        for results, events in chunk_outputs:
+            all_results.extend(results)
+            all_events.extend(events)
+
+        all_events.sort(key=lambda e: e.timestamp)
+
+        return all_results, all_events, duration
+
     def process_frame(self, frame_bgr, timestamp: float) -> tuple[FrameResult, Event | None]:
         """Process a single frame (live mode)."""
         detector = self._get_detector(running_mode="IMAGE")
@@ -189,6 +305,7 @@ class Pipeline:
                 state=state,
                 confidence=confidence,
                 face_detected=True,
+                face_data=face_data,
                 centroid_x=cx,
                 centroid_y=cy,
             ))
