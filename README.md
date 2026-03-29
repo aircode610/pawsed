@@ -1,97 +1,193 @@
 # Pawsed
 
-**AI-powered student engagement detection and analytics platform.** *Paused + Paws — for when attention pauses.*
+**AI-powered student engagement detection and analytics for lecturers.** *Paused + Paws — for when attention pauses.*
 
-Pawsed helps lecturers understand where they lose student attention during lectures. Upload a recording or use a live webcam session — the system analyzes facial cues and provides a color-coded engagement timeline, section-by-section scoring, and an AI teaching coach powered by Claude.
+Pawsed lets lecturers upload a recorded lecture (or run a live webcam session) and get back a color-coded engagement timeline, per-student distraction events, section-by-section AI scoring, and an interactive teaching coach — all powered by MediaPipe's face model and Claude.
 
-## What It Does
+---
 
-1. **Detects** facial landmarks, eye state, gaze direction, head pose, and expressions using MediaPipe (478 landmarks + 52 blendshapes)
-2. **Classifies** engagement into three levels: Engaged, Passive, Disengaged
-3. **Logs** timestamped distraction events (yawns, looking away, eyes closed, etc.)
-4. **Scores** each lecture section with AI-generated teaching advice
-5. **Coaches** lecturers via an interactive AI chat that references their session data
+## How It Works
+
+### The Detection Pipeline (6 Layers)
+
+Every video frame passes through a sequential stack of layers before results hit the database:
+
+```
+Video frame
+    │
+    ▼
+Layer 1 — Detection (MediaPipe FaceLandmarker)
+    478 facial landmarks + 52 ARKit blendshapes per face
+    Tiled detection fallback for small faces (Zoom/Teams grids)
+    │
+    ▼
+Layer 2 — Feature Extraction
+    EAR  (Eye Aspect Ratio)     — eye open/closed state
+    MAR  (Mouth Aspect Ratio)   — yawn detection via jawOpen blendshape
+    Gaze score                  — eyeLook* blendshapes → on-screen vs away
+    Head pose                   — yaw / pitch / roll from 4×4 transform matrix
+    Expression variance         — 30-frame rolling std dev of blendshapes
+    Drowsiness score            — composite: blink rate + partial closure
+    Head motion                 — fidgeting intensity from pose std deviation
+    Brow furrow                 — confusion / cognitive load
+    │
+    ▼
+Layer 3 — Engagement Classifier (rule-based, stateful)
+    ENGAGED      — default; fewer than 2 passive signals
+    PASSIVE      — 2+ simultaneous signals (drifting gaze, frozen face, slight turn…)
+    DISENGAGED   — any single sustained trigger:
+                   eyes closed >0.5s, yawn >2s, gaze away >3s,
+                   head turned >15°, drowsiness >0.6 for >2s, fidgeting >2s
+    │
+    ▼
+Layer 4 — Event Logger
+    Emits discrete timestamped events when a distraction ends
+    Types: yawn, eyes_closed, looked_away, looked_down,
+           drowsy, distracted, zoned_out, face_lost
+    │
+    ▼
+Layer 5 — Session Analytics
+    focus_time_pct, longest_streak, distraction_breakdown
+    engagement_curve (per-minute bins), danger_zones
+    Classroom-level risk: LOW / MODERATE / HIGH / CRITICAL
+    │
+    ▼
+Layer 6 — AI Insights (Claude + LangGraph)
+    Section scoring  — lecture split into ~5-min windows,
+                       Claude generates per-section teaching notes
+    Teaching coach   — multi-turn chat with full session context injected
+```
+
+### Multi-Face Support
+
+The pipeline tracks **multiple students simultaneously** using stable face IDs across frames. Each face gets its own feature extractor and classifier instance. Classroom-level risk is computed from the percentage of disengaged faces per frame — so one distracted student in a class of 20 doesn't spike the risk level.
+
+### Landmarks Overlay
+
+After analysis, Pawsed renders an annotated video with face mesh, engagement state border, and per-face metrics overlaid. The overlay reuses the landmarks already extracted during analysis — **MediaPipe runs exactly once per session**, not twice.
+
+---
+
+## Performance
+
+MediaPipe inference (62ms/frame on CPU) is the sole bottleneck — feature extraction and classification combined take under 0.2ms/frame. Three optimizations were applied to make processing fast enough for full lecture videos:
+
+### 1. Parallel Chunk Processing
+
+The video is split into N equal frame ranges and each chunk is processed by a separate worker process with its own MediaPipe instance. Results are merged by timestamp after all workers complete.
+
+```
+Video ──┬── chunk 0 → worker 0 → [FrameResult, ...]
+        ├── chunk 1 → worker 1 → [FrameResult, ...]
+        ├── chunk 2 → worker 2 → [FrameResult, ...]   ──► merge ──► analytics
+        ├── chunk 3 → worker 3 → [FrameResult, ...]
+        └── chunk N → worker N → [FrameResult, ...]
+```
+
+Workers use `ProcessPoolExecutor` (bypasses the GIL for CPU-bound inference). Each chunk seeks once to its start frame and then reads sequentially — per-frame random seeking in H.264 is ~12× slower than sequential decoding and was explicitly benchmarked and ruled out.
+
+### 2. Reduced Processing FPS
+
+Engagement states require sustained conditions (0.5–3s) to trigger, so sampling every 200ms (5fps) captures all real events. This halves the number of MediaPipe calls vs the naive 10fps default.
+
+### 3. Overlay Reuse
+
+The landmarks overlay is rendered from the face data already captured during analysis (`FaceData` stored in `FaceResult`). No second detection pass.
+
+### Benchmark — 96.8s test video, 60fps source, Apple M1 Max
+
+| Optimization | Pipeline time | Total API response |
+|---|---|---|
+| Baseline (sequential, 10fps) | 62.7s | ~107s (overlay blocking) |
+| + Parallel workers (5×) | 21.5s | ~30s |
+| + Overlay from pre-computed results | 21.5s | ~30s |
+| + 8 workers + 5fps | **9.5s** | **~17s** |
+| **Overall speedup** | **6.6×** | **6.3×** |
+
+For a 1-hour lecture: **~6 minutes** to process (down from ~39 minutes with the original sequential approach).
+
+---
 
 ## Tech Stack
 
 | Component | Technology |
-|-----------|-----------|
-| Detection Engine | MediaPipe FaceLandmarker |
-| Video Processing | OpenCV |
-| Backend API | Python + FastAPI |
-| AI Pipelines | LangGraph + Claude API (Anthropic) |
-| Frontend | React + TypeScript + Tailwind + shadcn/ui |
+|---|---|
+| Face detection | MediaPipe FaceLandmarker (478 landmarks + 52 blendshapes) |
+| Video I/O | OpenCV |
+| Parallelism | Python `ProcessPoolExecutor` |
+| Backend API | FastAPI + Python 3.11 |
+| AI pipelines | LangGraph + Claude API (`claude-sonnet-4-6`) |
+| Auth | JWT (python-jose) |
+| Database | SQLite via SQLAlchemy |
+| Results persistence | Pickle sidecar files (for overlay regeneration) |
+| Frontend | React + TypeScript + Vite + Tailwind + shadcn/ui |
 | Charts | Recharts |
-| Storage | JSON files |
 
 ---
 
-## Running the Project
+## Setup
 
 ### Prerequisites
 
-- Python 3.11+ (tested with 3.14)
+- Python 3.11+
 - Node.js 18+
-- An [Anthropic API key](https://console.anthropic.com/) (for AI insights features)
+- [Anthropic API key](https://console.anthropic.com/) (for AI insights; all other features work without it)
 
-### 1. Backend
+### Backend
 
 ```bash
 cd backend
 
-# Create virtual environment
 python3 -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
 
-# Install dependencies
 pip install -r requirements.txt
 
-# Configure environment
 cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
+# Add your ANTHROPIC_API_KEY to .env
 
-# Start the server
 uvicorn app.main:app --reload --port 8000
 ```
 
-The API is now running at **http://localhost:8000**. Check http://localhost:8000/docs for the interactive Swagger UI.
+API docs available at **http://localhost:8000/docs**.
 
-### 2. Frontend
+### Frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start the dev server
 npm run dev
 ```
 
-The frontend is now running at **http://localhost:8080**.
+Frontend runs at **http://localhost:8080**.
 
-### 3. Use It
+### Usage
 
-1. Open **http://localhost:8080** in your browser
-2. Upload a lecture video (MP4, WebM, or MOV) or click "Start Live Session"
-3. After processing, you'll see the engagement timeline, analytics dashboard, and AI insights
-4. On the Insights page, use the teaching coach chat to ask questions about your lecture
+1. Open **http://localhost:8080**
+2. Sign up, then upload a lecture video (MP4, WebM, MOV) or start a Live Session
+3. Wait ~17s for a 2-min video — the analytics dashboard and landmarks overlay are ready together
+4. Toggle **Landmarks** on the video player to see the face mesh and per-frame engagement state
+5. Go to the **Insights** tab for section-by-section AI scoring and the teaching coach chat
 
-> **Note:** If the backend is not running, all pages gracefully fall back to built-in mock data so you can demo the frontend independently.
+> The frontend falls back to built-in mock data if the backend is unreachable, so you can demo the UI standalone.
 
 ---
 
-## API Endpoints
+## API Reference
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/analyze` | POST | Upload video for engagement analysis |
-| `/session/{id}` | GET | Full event timeline + analytics |
-| `/session/{id}/insights/sections` | GET | Section-by-section scoring with AI notes |
+|---|---|---|
+| `/analyze` | POST | Upload video — runs full pipeline, returns `session_id` |
+| `/session/{id}` | GET | Full session: events, analytics, `has_landmarks` flag |
+| `/session/{id}/video` | GET | Serve original video or landmarks overlay (`?landmarks=true`) |
+| `/session/{id}/insights/sections` | GET | Section scoring with AI teaching notes |
 | `/session/{id}/insights/chat` | POST | Teaching coach conversation |
-| `/sessions` | GET | Session history with pagination |
-| `/ws/live` | WebSocket | Real-time engagement streaming |
-| `/health` | GET | Health check |
+| `/sessions` | GET | Session history (paginated, sortable by date or score) |
+| `/ws/live` | WebSocket | Real-time per-frame engagement streaming |
+| `/auth/signup` | POST | Create lecturer account |
+| `/auth/login` | POST | Get JWT token |
+
+---
 
 ## Project Structure
 
@@ -99,49 +195,53 @@ The frontend is now running at **http://localhost:8080**.
 pawsed/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                 # FastAPI entry point
-│   │   ├── core/config.py          # Settings (env vars)
+│   │   ├── main.py
+│   │   ├── core/
+│   │   │   └── config.py              # Settings — processing_fps, model_path, etc.
 │   │   ├── api/routes/
-│   │   │   ├── sessions.py         # /analyze, /session, /sessions
-│   │   │   ├── insights.py         # /insights/sections, /insights/chat
-│   │   │   └── websocket.py        # /ws/live
+│   │   │   ├── sessions.py            # /analyze, /session, /sessions, /video
+│   │   │   ├── insights.py            # /insights/sections, /insights/chat
+│   │   │   ├── auth.py                # /auth/signup, /auth/login
+│   │   │   └── websocket.py           # /ws/live
 │   │   ├── engine/
-│   │   │   ├── pipeline.py         # L1→L2→L3 orchestrator
-│   │   │   ├── features.py         # L2: EAR, MAR, gaze, head pose
-│   │   │   └── classifier.py       # L3: rule-based engagement classifier
+│   │   │   ├── pipeline.py            # Orchestrator: parallel chunk processing
+│   │   │   ├── detection.py           # L1: MediaPipe FaceLandmarker wrapper
+│   │   │   ├── features.py            # L2: EAR, MAR, gaze, head pose, drowsiness
+│   │   │   ├── classifier.py          # L3: stateful rule-based classifier
+│   │   │   ├── tracker.py             # Multi-face stable ID tracker
+│   │   │   └── overlay.py             # Landmarks video renderer (no re-detection)
 │   │   ├── analytics/
-│   │   │   ├── prompts.py          # All LLM prompt templates
-│   │   │   ├── section_scoring.py  # LangGraph: lecture section scoring
-│   │   │   ├── teaching_coach.py   # LangGraph: conversational coach
-│   │   │   └── events.py           # L4: timeline event logger
+│   │   │   ├── events.py              # L4: timestamped distraction event logger
+│   │   │   ├── session.py             # L5: session aggregation
+│   │   │   ├── section_scoring.py     # L6: LangGraph section scoring pipeline
+│   │   │   ├── teaching_coach.py      # L6: LangGraph teaching coach
+│   │   │   └── recommendations.py     # Claude API integration
 │   │   ├── models/
-│   │   │   ├── schemas.py          # Dataclasses: detection pipeline
-│   │   │   └── analytics.py        # Pydantic: AI pipeline models
-│   │   └── storage/sessions.py     # JSON file persistence
-│   ├── tests/                       # pytest test suite
+│   │   │   └── schemas.py             # FaceData, FeatureVector, FrameResult, etc.
+│   │   ├── db/
+│   │   │   ├── database.py            # SQLAlchemy setup
+│   │   │   └── models.py              # Session, User ORM models
+│   │   └── storage/
+│   │       └── sessions.py            # Session persistence — analytics, events
+│   ├── tests/                         # pytest suite (50 tests, no API key needed)
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/                   # 8 pages (Upload, Live, Timeline, etc.)
-│   │   ├── components/              # Shared UI components
-│   │   ├── hooks/                   # React hooks (session data, mock chat)
+│   │   ├── pages/                     # Upload, Timeline, Insights, History, Live
+│   │   ├── components/                # Shared UI components
+│   │   ├── hooks/                     # useSessionData, useSectionScoring, etc.
 │   │   └── lib/
-│   │       ├── api.ts               # Backend API client
-│   │       ├── types.ts             # TypeScript interfaces
-│   │       └── mock-data.ts         # Demo/fallback data
-│   ├── package.json
-│   └── .env.example
-├── docs/
-│   ├── roadmap.md                   # Priority tiers and task tracking
-│   ├── backend-spec.md              # Layer-by-layer backend spec
-│   ├── frontend-spec.md             # Page-by-page frontend spec
-│   ├── api-spec.md                  # Full API documentation
-│   ├── architecture.md              # System architecture
-│   ├── ai-insights-spec.md          # Section scoring + teaching coach spec
-│   └── lovable/                     # Step-by-step Lovable prompts
-└── CLAUDE.md                        # Agent instructions for this project
+│   │       ├── api.ts                 # Backend client
+│   │       ├── types.ts               # TypeScript interfaces
+│   │       └── mock-data.ts           # Fallback demo data
+│   └── package.json
+├── docs/                              # Specs, roadmap, architecture diagrams
+├── models/                            # face_landmarker.task (MediaPipe model file)
+└── CLAUDE.md
 ```
+
+---
 
 ## Running Tests
 
@@ -149,32 +249,23 @@ pawsed/
 cd backend
 source .venv/bin/activate
 
-# Run all tests (skips LLM tests if no API key)
+# Full test suite (50 tests, no API key required)
 PYTHONPATH=. pytest tests/ -v
 
-# Run only non-LLM tests (fast, no API key needed)
+# Skip LLM integration tests
 PYTHONPATH=. pytest tests/ -v -k "not LLM"
-
-# Run with LLM evals (requires ANTHROPIC_API_KEY in env)
-ANTHROPIC_API_KEY=sk-ant-... PYTHONPATH=. pytest tests/ -v
 ```
 
-## Documentation
-
-- [Roadmap & Priorities](docs/roadmap.md)
-- [Backend Specification](docs/backend-spec.md)
-- [Frontend Specification](docs/frontend-spec.md)
-- [API Specification](docs/api-spec.md)
-- [Architecture Overview](docs/architecture.md)
-- [AI Insights Specification](docs/ai-insights-spec.md)
-- [Lovable Frontend Guide](docs/lovable/README.md)
+---
 
 ## Inspired By
 
-- [attention-monitor](https://github.com/yptheangel/attention-monitor) — Face landmark tracking with dlib + PyQtGraph
-- [Student-Attentiveness-System](https://github.com/anupampatil44/Student-Attentiveness-System) — Expression + head pose detection with MTCNN
+- [attention-monitor](https://github.com/yptheangel/attention-monitor) — dlib + PyQtGraph face tracking
+- [Student-Attentiveness-System](https://github.com/anupampatil44/Student-Attentiveness-System) — MTCNN expression + head pose detection
 
-Pawsed goes beyond both with MediaPipe's superior model, a polished web frontend, session analytics, and AI-powered teaching recommendations.
+Pawsed goes beyond both: MediaPipe's 478-landmark model, multi-face classroom tracking, a polished React dashboard, session persistence, and AI-generated teaching advice.
+
+---
 
 ## License
 
