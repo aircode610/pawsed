@@ -181,12 +181,13 @@ class Pipeline:
             features = extractor.extract(face_data, timestamp)
 
             # L3: Classification
-            state, _confidence = classifier.classify(features)
+            state, confidence = classifier.classify(features)
 
             face_results.append(FaceResult(
                 face_id=face_id,
                 features=features,
                 state=state,
+                confidence=confidence,
                 face_detected=True,
                 centroid_x=cx,
                 centroid_y=cy,

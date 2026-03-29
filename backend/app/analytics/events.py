@@ -88,6 +88,13 @@ class EventLogger:
 
         if result.state == EngagementState.DISENGAGED:
             event_type = _classify_event_type(result.features, self._thresholds)
+            # Use actual classifier confidence from the worst face
+            confidence = 0.5
+            if result.faces:
+                disengaged_faces = [f for f in result.faces if f.state == EngagementState.DISENGAGED]
+                if disengaged_faces:
+                    confidence = max(f.confidence for f in disengaged_faces)
+
             metadata: dict = {}
             if event_type == EVENT_LOOKED_AWAY:
                 metadata["direction"] = (
@@ -101,7 +108,7 @@ class EventLogger:
             return self._handle_distraction(
                 result.timestamp,
                 event_type,
-                0.8,
+                confidence,
                 metadata,
             )
         else:

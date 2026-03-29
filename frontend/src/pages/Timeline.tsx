@@ -290,13 +290,20 @@ const TimelinePage = () => {
       {/* Event List */}
       <Card className="bg-card border-border overflow-hidden">
         <div className="px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-medium text-foreground">Events</h3>
+          <h3 className="text-sm font-medium text-foreground">Distraction Events</h3>
+        </div>
+        {/* Column headers */}
+        <div className="flex items-center gap-4 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground/60 border-b border-border">
+          <span className="w-12">Time</span>
+          <span className="flex-1">Event</span>
+          <span className="w-14 text-right">Duration</span>
+          <span className="w-16 text-right">Confidence</span>
         </div>
         <div className="divide-y divide-border max-h-80 overflow-y-auto">
           {events.map((ev, i) => {
             const isActive = i === activeEventIdx;
             const dotColor =
-              ev.event_type === "looked_away" || ev.event_type === "zoned_out"
+              ev.event_type === "looked_away" || ev.event_type === "zoned_out" || ev.event_type === "distracted"
                 ? "bg-engage-passive"
                 : "bg-engage-disengaged";
             return (
@@ -317,9 +324,9 @@ const TimelinePage = () => {
                   </span>
                 </span>
                 <span className="text-muted-foreground w-14 text-right">
-                  {ev.duration}s
+                  {ev.duration.toFixed(1)}s
                 </span>
-                <span className="text-muted-foreground w-12 text-right">
+                <span className="text-muted-foreground w-16 text-right">
                   {Math.round(ev.confidence * 100)}%
                 </span>
               </button>

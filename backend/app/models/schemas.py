@@ -95,6 +95,7 @@ class FaceResult:
     face_id: int             # Tracked face ID (stable across frames)
     features: FeatureVector
     state: EngagementState
+    confidence: float = 0.0  # Classifier confidence 0-1
     face_detected: bool = True
     centroid_x: float = 0.0  # Face center for tracking (normalized 0-1)
     centroid_y: float = 0.0
