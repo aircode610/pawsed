@@ -11,6 +11,7 @@ from typing import Generator
 from app.models.schemas import EngagementState, FeatureVector, FrameResult
 
 PARTIAL_EMIT_INTERVAL = 2.0  # seconds between partial live-mode emissions
+SIGNIFICANT_THRESHOLD = 5.0
 
 # Maps the root cause of a disengagement to an event type
 EVENT_YAWN = "yawn"
@@ -30,6 +31,7 @@ class Event:
     duration: float         # seconds (0.0 if still ongoing)
     confidence: float       # 0–1
     metadata: dict = field(default_factory=dict)
+    severity: str = "brief"
 
 
 def _classify_event_type(features: FeatureVector, config_thresholds: dict) -> str:
@@ -141,6 +143,7 @@ class EventLogger:
             duration=round(t - self._distraction_start, 3),
             confidence=self._distraction_confidence,
             metadata=self._distraction_metadata,
+            severity="significant" if (t - self._distraction_start) >= SIGNIFICANT_THRESHOLD else "brief",
         )
         self._events.append(event)
         self._distraction_start = None
@@ -161,6 +164,7 @@ class EventLogger:
             duration=round(current_timestamp - self._distraction_start, 3),
             confidence=self._distraction_confidence,
             metadata=self._distraction_metadata,
+            severity="brief",
         )
 
     def flush(self, end_timestamp: float) -> Event | None:

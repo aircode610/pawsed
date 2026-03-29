@@ -4,6 +4,7 @@ export interface SessionEvent {
   duration: number;
   confidence: number;
   metadata: Record<string, unknown>;
+  severity: "brief" | "significant";
 }
 
 export interface EngagementSegment {

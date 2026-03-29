@@ -60,7 +60,19 @@ def save_session_results(
         for seg in engagement_states
         if seg["state"] == "engaged"
     )
-    focus_pct = round(engaged_time / total * 100, 1)
+    passive_time = sum(
+        (seg["end"] - seg["start"])
+        for seg in engagement_states
+        if seg["state"] == "passive"
+    )
+    disengaged_time = sum(
+        (seg["end"] - seg["start"])
+        for seg in engagement_states
+        if seg["state"] == "disengaged"
+    )
+    # Passive treated as engaged (classifier no longer emits passive state).
+    # Distraction % is disengaged-only, not (100 - focus).
+    focus_pct = round((engaged_time + passive_time) / total * 100, 1)
 
     # Longest focus streak
     longest_streak = 0.0
@@ -139,7 +151,7 @@ def save_session_results(
     session.duration = round(duration, 2)
     session.analytics = {
         "focus_time_pct": focus_pct,
-        "distraction_time_pct": round(100 - focus_pct, 1),
+        "distraction_time_pct": round(disengaged_time / total * 100, 1),
         "longest_focus_streak": round(longest_streak, 2),
         "distraction_breakdown": breakdown,
         "engagement_curve": engagement_curve,
@@ -156,6 +168,7 @@ def save_session_results(
             "duration": e.duration,
             "confidence": e.confidence,
             "metadata": e.metadata,
+            "severity": e.severity,
         }
         for e in events
     ]

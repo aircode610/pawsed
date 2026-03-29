@@ -4,6 +4,7 @@ import { Play, Eye, Moon, CircleDot, ArrowLeft, ArrowRight, ArrowDown, AlertCirc
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -12,7 +13,7 @@ import {
 import { SessionSubNav } from "@/components/SessionSubNav";
 import { useSessionData } from "@/hooks/use-session-data";
 import { getToken } from "@/lib/api";
-import type { EventType } from "@/lib/types";
+import type { EventType, SessionEvent } from "@/lib/types";
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -22,12 +23,36 @@ function formatTime(seconds: number): string {
 
 const stateColor: Record<string, string> = {
   engaged: "bg-engage-engaged",
-  passive: "bg-engage-passive",
+  passive: "bg-engage-engaged",
   disengaged: "bg-engage-disengaged",
 };
 
-function EventIcon({ type, direction }: { type: EventType; direction?: string }) {
-  const cls = "h-3 w-3";
+interface EventCluster {
+  position: number; // 0-100 percentage
+  events: SessionEvent[];
+}
+
+function clusterEvents(events: SessionEvent[], duration: number): EventCluster[] {
+  if (!duration) return [];
+  const CLUSTER_PCT = 1.5; // events within 1.5% of timeline width are merged
+  const threshold = (CLUSTER_PCT / 100) * duration;
+  const clusters: { timestamp: number; events: SessionEvent[] }[] = [];
+  for (const ev of [...events].sort((a, b) => a.timestamp - b.timestamp)) {
+    const last = clusters[clusters.length - 1];
+    if (last && ev.timestamp - last.timestamp < threshold) {
+      last.events.push(ev);
+    } else {
+      clusters.push({ timestamp: ev.timestamp, events: [ev] });
+    }
+  }
+  return clusters.map((c) => ({
+    position: (c.timestamp / duration) * 100,
+    events: c.events,
+  }));
+}
+
+function EventIcon({ type, direction, className }: { type: EventType; direction?: string; className?: string }) {
+  const cls = className ?? "h-3 w-3";
   switch (type) {
     case "eyes_closed":
       return <Eye className={cls} />;
@@ -63,6 +88,9 @@ const TimelinePage = () => {
   const [videoError, setVideoError] = useState(false);
   const [showLandmarks, setShowLandmarks] = useState(false);
   const { duration, analytics, events, engagement_states, has_landmarks } = session;
+  const significantEvents = events.filter((e) => e.severity === "significant");
+  const briefEvents = events.filter((e) => e.severity === "brief" || !e.severity);
+  const sigClusters = clusterEvents(significantEvents, duration);
 
   const token = getToken();
   const videoUrl = id && token
@@ -156,7 +184,8 @@ const TimelinePage = () => {
         </Card>
         <Card className="bg-card border-border p-4 text-center">
           <p className="text-xs text-muted-foreground mb-1">Events</p>
-          <p className="text-xl font-bold text-foreground">{events.length}</p>
+          <p className="text-xl font-bold text-foreground">{significantEvents.length}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">{briefEvents.length} brief</p>
         </Card>
       </div>
 
@@ -223,15 +252,13 @@ const TimelinePage = () => {
 
       {/* Engagement Timeline */}
       <Card className="bg-card border-border p-4">
-        <h3 className="text-sm font-medium text-foreground mb-3">
-          Engagement Timeline
-        </h3>
+        <h3 className="text-sm font-medium text-foreground mb-3">Engagement Timeline</h3>
+
+        {/* Row 1: engagement color band — no event dots, keeps it clean */}
         <div
-          ref={timelineRef}
-          className="relative h-10 rounded-lg overflow-hidden cursor-pointer border border-border"
+          className="relative h-8 rounded-t-lg overflow-hidden cursor-pointer border border-border border-b-0"
           onClick={handleTimelineClick}
         >
-          {/* State segments */}
           <div className="absolute inset-0 flex">
             {engagement_states.map((seg, i) => (
               <div
@@ -241,8 +268,6 @@ const TimelinePage = () => {
               />
             ))}
           </div>
-
-          {/* Danger zone overlay */}
           {analytics.danger_zones.map((zone, i) => (
             <div
               key={`dz-${i}`}
@@ -253,94 +278,160 @@ const TimelinePage = () => {
               }}
             />
           ))}
-
-          {/* Event markers */}
-          {events.map((ev, i) => (
-            <Tooltip key={i}>
-              <TooltipTrigger asChild>
-                <div
-                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-5 w-5 rounded-full bg-background/90 border border-border flex items-center justify-center text-foreground hover:scale-125 transition-transform z-10"
-                  style={{ left: `${(ev.timestamp / duration) * 100}%` }}
-                >
-                  <EventIcon
-                    type={ev.event_type as EventType}
-                    direction={(ev.metadata as { direction?: string })?.direction}
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="text-xs">
-                  {eventLabel(ev.event_type)} at {formatTime(ev.timestamp)} —{" "}
-                  {ev.duration}s
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          ))}
-
-          {/* Cursor */}
           <div
             className="absolute inset-y-0 w-0.5 bg-foreground z-20 pointer-events-none"
             style={{ left: `${(currentTime / duration) * 100}%` }}
           />
         </div>
 
+        {/* Row 2: significant-event strip with clustering */}
+        <div
+          ref={timelineRef}
+          className="relative h-6 rounded-b-lg overflow-hidden cursor-pointer border border-border border-t border-t-border/40 bg-background/40"
+          onClick={handleTimelineClick}
+        >
+          <div
+            className="absolute inset-y-0 w-0.5 bg-foreground/40 z-20 pointer-events-none"
+            style={{ left: `${(currentTime / duration) * 100}%` }}
+          />
+          {sigClusters.map((cluster, i) => (
+            <Tooltip key={i}>
+              <TooltipTrigger asChild>
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center justify-center z-10 cursor-pointer"
+                  style={{ left: `${cluster.position}%` }}
+                >
+                  {cluster.events.length === 1 ? (
+                    <div className="h-4 w-4 rounded-full bg-engage-disengaged/90 border border-engage-disengaged flex items-center justify-center text-white hover:scale-125 transition-transform">
+                      <EventIcon
+                        type={cluster.events[0].event_type as EventType}
+                        direction={(cluster.events[0].metadata as { direction?: string })?.direction}
+                        className="h-2.5 w-2.5"
+                      />
+                    </div>
+                  ) : (
+                    <div className="h-5 px-1.5 rounded-full bg-engage-disengaged/90 border border-engage-disengaged flex items-center justify-center text-white text-[9px] font-bold hover:scale-110 transition-transform">
+                      {cluster.events.length}
+                    </div>
+                  )}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                {cluster.events.length === 1 ? (
+                  <p className="text-xs">
+                    {eventLabel(cluster.events[0].event_type)} at {formatTime(cluster.events[0].timestamp)} — {cluster.events[0].duration.toFixed(1)}s
+                  </p>
+                ) : (
+                  <div className="text-xs space-y-0.5">
+                    {cluster.events.map((ev, j) => (
+                      <p key={j}>{eventLabel(ev.event_type)} — {ev.duration.toFixed(1)}s</p>
+                    ))}
+                  </div>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
+
         {/* Legend */}
         <div className="flex gap-4 mt-3">
-          {(["engaged", "passive", "disengaged"] as const).map((s) => (
+          {(["engaged", "disengaged"] as const).map((s) => (
             <div key={s} className="flex items-center gap-1.5">
               <div className={`h-2.5 w-2.5 rounded-full ${stateColor[s]}`} />
               <span className="text-xs text-muted-foreground capitalize">{s}</span>
             </div>
           ))}
+          <div className="flex items-center gap-1.5 ml-auto">
+            <div className="h-2.5 w-2.5 rounded-full bg-engage-disengaged/90" />
+            <span className="text-xs text-muted-foreground">significant event</span>
+          </div>
         </div>
       </Card>
 
-      {/* Event List */}
+      {/* Event List — tabbed */}
       <Card className="bg-card border-border overflow-hidden">
-        <div className="px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-medium text-foreground">Distraction Events</h3>
-        </div>
-        {/* Column headers */}
-        <div className="flex items-center gap-4 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground/60 border-b border-border">
-          <span className="w-12">Time</span>
-          <span className="flex-1">Event</span>
-          <span className="w-14 text-right">Duration</span>
-          <span className="w-16 text-right">Confidence</span>
-        </div>
-        <div className="divide-y divide-border max-h-80 overflow-y-auto">
-          {events.map((ev, i) => {
-            const isActive = i === activeEventIdx;
-            const dotColor =
-              ev.event_type === "looked_away" || ev.event_type === "zoned_out" || ev.event_type === "distracted"
-                ? "bg-engage-passive"
-                : "bg-engage-disengaged";
-            return (
-              <button
-                key={i}
-                onClick={() => seekTo(ev.timestamp)}
-                className={`w-full flex items-center gap-4 px-4 py-2.5 text-left text-sm transition-colors hover:bg-accent/50 ${
-                  isActive ? "bg-primary/10" : i % 2 === 0 ? "bg-transparent" : "bg-accent/20"
-                }`}
-              >
-                <span className="font-mono text-muted-foreground w-12">
-                  {formatTime(ev.timestamp)}
-                </span>
-                <span className="flex items-center gap-2 flex-1 min-w-0">
-                  <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor}`} />
-                  <span className="text-foreground truncate">
-                    {eventLabel(ev.event_type)}
+        <Tabs defaultValue="significant">
+          <div className="px-4 pt-3 pb-0 border-b border-border flex items-center justify-between">
+            <h3 className="text-sm font-medium text-foreground">Distraction Events</h3>
+            <TabsList className="h-7 mb-2">
+              <TabsTrigger value="significant" className="text-xs h-6 px-3">
+                Significant
+                {significantEvents.length > 0 && (
+                  <span className="ml-1.5 bg-engage-disengaged/20 text-engage-disengaged text-[10px] font-semibold rounded-full px-1.5 py-0">
+                    {significantEvents.length}
                   </span>
-                </span>
-                <span className="text-muted-foreground w-14 text-right">
-                  {ev.duration.toFixed(1)}s
-                </span>
-                <span className="text-muted-foreground w-16 text-right">
-                  {Math.round(ev.confidence * 100)}%
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="brief" className="text-xs h-6 px-3">
+                Brief
+                {briefEvents.length > 0 && (
+                  <span className="ml-1.5 bg-muted text-muted-foreground text-[10px] font-semibold rounded-full px-1.5 py-0">
+                    {briefEvents.length}
+                  </span>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          {/* Column headers */}
+          <div className="flex items-center gap-4 px-4 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 border-b border-border">
+            <span className="w-12">Time</span>
+            <span className="flex-1">Event</span>
+            <span className="w-14 text-right">Duration</span>
+            <span className="w-16 text-right">Confidence</span>
+          </div>
+
+          <TabsContent value="significant" className="mt-0">
+            <div className="divide-y divide-border max-h-72 overflow-y-auto">
+              {significantEvents.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground">No significant events</div>
+              ) : (
+                significantEvents.map((ev, i) => {
+                  const isActive = events.indexOf(ev) === activeEventIdx;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => seekTo(ev.timestamp)}
+                      className={`w-full flex items-center gap-4 px-4 py-2.5 text-left text-sm transition-colors hover:bg-accent/50 ${isActive ? "bg-primary/10" : ""}`}
+                    >
+                      <span className="font-mono text-muted-foreground w-12">{formatTime(ev.timestamp)}</span>
+                      <span className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="h-2 w-2 rounded-full shrink-0 bg-engage-disengaged" />
+                        <span className="text-foreground truncate">{eventLabel(ev.event_type)}</span>
+                      </span>
+                      <span className="text-muted-foreground w-14 text-right">{ev.duration.toFixed(1)}s</span>
+                      <span className="text-muted-foreground w-16 text-right">{Math.round(ev.confidence * 100)}%</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="brief" className="mt-0">
+            <div className="divide-y divide-border max-h-72 overflow-y-auto">
+              {briefEvents.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground">No brief events</div>
+              ) : (
+                briefEvents.map((ev, i) => (
+                  <button
+                    key={i}
+                    onClick={() => seekTo(ev.timestamp)}
+                    className="w-full flex items-center gap-4 px-4 py-2 text-left text-xs transition-colors hover:bg-accent/50"
+                  >
+                    <span className="font-mono text-muted-foreground/70 w-12">{formatTime(ev.timestamp)}</span>
+                    <span className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-muted-foreground/40" />
+                      <span className="text-muted-foreground truncate">{eventLabel(ev.event_type)}</span>
+                    </span>
+                    <span className="text-muted-foreground/60 w-14 text-right">{ev.duration.toFixed(1)}s</span>
+                    <span className="text-muted-foreground/60 w-16 text-right">{Math.round(ev.confidence * 100)}%</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </Card>
     </div>
   );
