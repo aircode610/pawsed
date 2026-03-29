@@ -1,5 +1,7 @@
 # Pawsed
 
+**Live app: [paw-scan-hub.lovable.app](https://paw-scan-hub.lovable.app)**
+
 **AI-powered student engagement detection and analytics for lecturers.** *Paused + Paws — for when attention pauses.*
 
 Pawsed lets lecturers upload a recorded lecture and get back a color-coded engagement timeline, per-student distraction events, section-by-section AI scoring grounded in what was actually being taught, and an interactive teaching coach — all powered by MediaPipe's face model, faster-whisper audio transcription, and Claude.
